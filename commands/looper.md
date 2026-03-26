@@ -25,17 +25,15 @@ allowed-tools: ["Bash", "Read", "Write", "Glob"]
 - `--command <name>` → TYPE=command，NAME=`<name>`
 - `--skill <name>` → TYPE=skill，NAME=`<name>`
 - `--plugin <name>` → TYPE=plugin，NAME=`<name>`
-- `--image <image>` → USER_IMAGE=`<image>`（可选，显式指定镜像；首次调用时覆盖 devcontainer，非首次调用时覆盖缓存配置）
 
 若参数为空或格式不合法，输出用法说明后退出：
 
 ```
-用法：/looper --command <name> | --skill <name> | --plugin <pkg> [--image <image>]
+用法：/looper --command <name> | --skill <name> | --plugin <pkg>
 示例：
-  /looper --command patterns                              — 验证 patterns 命令
-  /looper --skill skill-creator                          — 验证 skill-creator 插件
-  /looper --plugin news-digest                           — 验证 news-digest 安装包
-  /looper --command patterns --image node:20-slim        — 使用指定镜像验证
+  /looper --command patterns       — 验证 patterns 命令
+  /looper --skill skill-creator    — 验证 skill-creator 插件
+  /looper --plugin news-digest     — 验证 news-digest 安装包
 ```
 
 ---
@@ -49,7 +47,7 @@ allowed-tools: ["Bash", "Read", "Write", "Glob"]
 COMMAND_PATH="$HOME/.claude/commands/${NAME}.md"
 
 # skill：先找用户级 plugin cache，再找 skills/
-SKILL_PATH=$(find "$HOME/.claude" -maxdepth 8 -name "${NAME}" -type d 2>/dev/null | head -1)
+SKILL_PATH=$(find "$HOME/.claude" -maxdepth 5 -name "${NAME}" -type d 2>/dev/null | head -1)
 
 # plugin：项目 packer 目录
 PLUGIN_PATH="$(pwd)/packer/${NAME}"
@@ -66,23 +64,6 @@ PLUGIN_PATH="$(pwd)/packer/${NAME}"
 ---
 
 ## Step 2：检查 Docker 可用性
-
-**先检测是否在容器内运行（DinD 不支持）**：
-
-```bash
-# 检测是否在 devcontainer / Docker 容器内
-if [ -f "/.dockerenv" ] || grep -q "docker\|lxc\|containerd" /proc/1/cgroup 2>/dev/null; then
-  # 容器内环境：Docker-in-Docker 不支持
-  echo "⚠️ 当前 CC 运行于容器/devcontainer 内，不支持 Docker-in-Docker (DinD)。"
-  echo "  若需完整验证，请在宿主机直接运行："
-  echo "    /looper --<TYPE> <NAME>"
-  echo "  或仅运行静态分析（无容器测试）。"
-  # 退出（不算失败）
-  exit 0
-fi
-```
-
-**再检查宿主机 Docker 守护进程**：
 
 ```bash
 docker info > /dev/null 2>&1
@@ -101,111 +82,38 @@ docker info > /dev/null 2>&1
 
 ---
 
-## Step 3：镜像策略选择
-
-> **三级优先级（首次调用）**：devcontainer.json 自动检测 → 用户 `--image` 显式指定 → 最小 CC runtime fallback
-> **非首次调用**：默认沿用项目状态文件中的上次配置；`--image` 参数可强制覆盖。
+## Step 3：读取镜像和代理配置
 
 ```bash
-# 项目级镜像状态文件（跨调用持久化）
-LOOPER_STATE="$(pwd)/looper/.looper-state.json"
-IMAGE=""
-IMAGE_STRATEGY=""
-
-# ── 非首次调用：优先读取缓存配置 ──────────────────────────────────────────
-if [ -f "$LOOPER_STATE" ] && [ -z "${USER_IMAGE:-}" ]; then
-  _prev=$(python3 -c "
-import json, sys
-try:
-  d = json.load(open('$LOOPER_STATE'))
-  print(d.get('image','') + '|||' + d.get('strategy',''))
-except:
-  pass
-" 2>/dev/null)
-  if [ -n "$_prev" ]; then
-    IMAGE="${_prev%%|||*}"
-    IMAGE_STRATEGY="cached（沿用首次配置：${_prev##*|||}）"
-  fi
-fi
-
-# ── 首次调用 / --image 强制覆盖 ────────────────────────────────────────────
-if [ -z "$IMAGE" ] || [ -n "${USER_IMAGE:-}" ]; then
-  IMAGE=""
-  IMAGE_STRATEGY=""
-
-  # 优先级 1：devcontainer.json（项目标准环境，自动检测）
-  DEVCONTAINER="$(pwd)/.devcontainer/devcontainer.json"
-  if [ -f "$DEVCONTAINER" ]; then
-    IMAGE=$(python3 -c "
+# 从 devcontainer.json 读取镜像（去掉 JS 注释后解析）
+DEVCONTAINER="$(pwd)/.devcontainer/devcontainer.json"
+if [ -f "$DEVCONTAINER" ]; then
+  IMAGE=$(python3 -c "
 import json, re, sys
-try:
-  txt = open('$DEVCONTAINER').read()
-  txt = re.sub(r'//.*', '', txt)    # 去行注释
-  txt = re.sub(r',\s*}', '}', txt)  # 去尾逗号
-  cfg = json.loads(txt)
-  print(cfg.get('image',''))
-except:
-  pass
+txt = open('$DEVCONTAINER').read()
+txt = re.sub(r'//.*', '', txt)   # 去行注释
+txt = re.sub(r',\s*}', '}', txt) # 去尾逗号
+cfg = json.loads(txt)
+print(cfg.get('image',''))
 " 2>/dev/null)
-    [ -n "$IMAGE" ] && IMAGE_STRATEGY="devcontainer（自动检测）"
-  fi
-
-  # 优先级 2：用户明确指定（--image 参数）
-  if [ -z "$IMAGE" ] && [ -n "${USER_IMAGE:-}" ]; then
-    IMAGE="$USER_IMAGE"
-    IMAGE_STRATEGY="user-specified（--image 参数）"
-  fi
-
-  # 优先级 3：本地已有 cc-runtime-minimal（之前构建或拉取的缓存）
-  if [ -z "$IMAGE" ]; then
-    if docker image inspect cc-runtime-minimal > /dev/null 2>&1; then
-      IMAGE="cc-runtime-minimal"
-      IMAGE_STRATEGY="local-cached（cc-runtime-minimal）"
-    fi
-  fi
-
-  # 优先级 4：fallback — 引导用户获取 cc-runtime-minimal
-  if [ -z "$IMAGE" ]; then
-    echo ""
-    echo "⚠️  未检测到可用的 CC runtime 镜像。"
-    echo ""
-    echo "  请选择获取 cc-runtime-minimal 的方式，然后重新运行 /looper："
-    echo ""
-    echo "  [A] 本地构建（可审计，首次约 3-5 分钟）："
-    echo "      docker build -t cc-runtime-minimal $(pwd)/packer/looper/assets/"
-    echo ""
-    echo "  [B] 拉取预构建镜像（快速）："
-    echo "      docker pull <your-org>/cc-runtime-minimal:latest"
-    echo "      docker tag <your-org>/cc-runtime-minimal:latest cc-runtime-minimal"
-    echo ""
-    echo "  [C] 直接指定已有镜像（跳过此提示）："
-    echo "      /looper --$(echo $TYPE) $(echo $NAME) --image <image>"
-    echo ""
-    exit 0
-  fi
-
-  # 持久化到状态文件（供后续调用沿用）
-  mkdir -p "$(dirname "$LOOPER_STATE")"
-  python3 -c "
-import json
-d = {
-  'image': '$IMAGE',
-  'strategy': '$IMAGE_STRATEGY',
-  'timestamp': '$(date -u +%Y-%m-%dT%H:%M:%SZ)'
-}
-with open('$LOOPER_STATE', 'w') as f:
-  json.dump(d, f, indent=2, ensure_ascii=False)
-" 2>/dev/null || true
 fi
 
-# 代理（继承宿主机环境变量，未设置则为空）
-PROXY="${HTTP_PROXY:-${http_proxy:-}}"
-NO_PROXY_LIST="${NO_PROXY:-${no_proxy:-localhost,127.0.0.1,::1}}"
+# fallback：从 loop.zsh 读取
+if [ -z "$IMAGE" ] && [ -f "$(pwd)/looper/loop.zsh" ]; then
+  IMAGE=$(grep '^IMAGE=' "$(pwd)/looper/loop.zsh" | cut -d'"' -f2)
+fi
+
+# 最终 fallback
+IMAGE="${IMAGE:-repo.cicc.com/fi-fiqtas-docker-local/fieq-env/strategy:claude-0324}"
+
+# 代理（从 devcontainer.json remoteEnv 或默认）
+PROXY="http://hkproxy2.cicc.group:8080"
+NO_PROXY_LIST="localhost,127.0.0.1,::1,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16,*.local,/var/run/*.sock,repo.cicc.com"
 
 # looper/.claude.json（CC 入门跳过配置）
 CLAUDE_JSON="$(pwd)/looper/.claude.json"
 if [ ! -f "$CLAUDE_JSON" ]; then
-  CLAUDE_JSON=$(mktemp /tmp/looper_claudejson_XXXXXX)
+  CLAUDE_JSON=$(mktemp "${HOME}/looper_claudejson_XXXXXX")
   echo '{"hasCompletedOnboarding":true}' > "$CLAUDE_JSON"
 fi
 ```
@@ -217,13 +125,7 @@ fi
 > **纯净原则**：容器内 `~/.claude/` 只含 `settings.json`（API 凭证）+ 被测目标，不挂载宿主机完整 `~/.claude/`，确保零其他工具链干扰。
 
 ```bash
-# macOS Docker Desktop 默认只共享 /Users，/tmp 挂载可能失败
-# 优先使用 $HOME 下的路径；fallback 到 /tmp
-_TMP_BASE="${HOME:-}"
-if [ -z "$_TMP_BASE" ] || [ "$(uname)" != "Darwin" ]; then
-  _TMP_BASE="/tmp"
-fi
-LOOPER_TMP=$(mktemp -d "${_TMP_BASE}/looper_XXXXXX")
+LOOPER_TMP=$(mktemp -d "${HOME}/looper_XXXXXX")
 CLEAN_CLAUDE="$LOOPER_TMP/claude_home"
 mkdir -p "$CLEAN_CLAUDE/commands"
 
@@ -255,7 +157,6 @@ fi
 ```
 [环境准备]
   镜像：<IMAGE>
-  镜像策略：<IMAGE_STRATEGY>
   纯净 CC 目录：<LOOPER_TMP>
   目标：<TYPE>:<NAME>
   settings.json：已复制（API 凭证 + 模型配置）
@@ -385,13 +286,7 @@ REPORT_FILE="${REPORT_DIR}/${TIMESTAMP}_looper_${NAME}.md"
 
 ```markdown
 # Looper 报告：<NAME>
-日期：<TIMESTAMP>  类型：<TYPE>
-
-## 镜像配置
-| 字段 | 值 |
-|------|----|
-| 镜像 | `<IMAGE>` |
-| 应用策略 | <IMAGE_STRATEGY> |
+日期：<TIMESTAMP>  镜像：<IMAGE>  类型：<TYPE>
 
 ## 测试结果
 | 测试 | 结果 | 详情 |
@@ -427,7 +322,6 @@ rm -rf "$LOOPER_TMP"
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 目标：<TYPE>:<NAME>
 镜像：<IMAGE>
-镜像策略：<IMAGE_STRATEGY>
 
   T1 CC 可用性：     ✅ <version>
   T2 安装完整性：     ✅ <NAME>.md 已挂载
@@ -448,9 +342,6 @@ rm -rf "$LOOPER_TMP"
   触发率 0%      → description 未收敛，回溯到 eval 阶段：/skill-test --from-stage 3
   安装残缺        → 检查 SKILL.md 依赖声明，补全后重新安装
   CC 启动失败     → 检查镜像可用性：docker pull <IMAGE>
-                   镜像策略为 <IMAGE_STRATEGY>，如需切换请用 --image 参数
-                   如使用 cc-runtime-minimal，可本地重建：
-                     docker build -t cc-runtime-minimal $(pwd)/packer/looper/assets/
 ```
 
 ---
