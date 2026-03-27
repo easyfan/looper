@@ -53,6 +53,36 @@ docker build -t cc-runtime-minimal assets/image/
 
 镜像源码：[easyfan/agents-slim](https://github.com/easyfan/agents-slim)
 
+## 开发
+
+### Evals
+
+`evals/evals.json` 包含 8 个测试用例，覆盖参数解析、目标查找、Docker 可用性检测和镜像策略的主要分支：
+
+| ID | 场景 | 验证重点 |
+|----|------|---------|
+| 1 | `/looper --command patterns` | 解析参数、检查目标文件存在、Docker 可用性检测；Docker 不可用时优雅退出 |
+| 2 | `/looper --command xyz_nonexistent_...` | 目标不存在时输出"❌ 目标未找到"，不尝试启动容器 |
+| 3 | `/looper --plugin patterns` | TYPE=plugin 路径：查找 packer/ 目录，执行 install.sh 后测试 |
+| 4 | `/looper`（无参数）| 输出完整用法说明（含四种参数），不执行任何 Docker 操作 |
+| 5 | `/looper --skill skill-creator` | TYPE=skill 路径：在 ~/.claude 下搜索目录，构建纯净环境测试触发 |
+| 6 | `/looper --command patterns --image my-custom-registry:cc-runtime` | `--image` 显式指定镜像，策略为 user-specified，跳过 devcontainer 检测 |
+| 7 | 同上（前置 `.looper-state.json`）| 读取缓存状态文件，直接沿用已记录镜像，不重新检测 |
+| 8 | 镜像策略输出验证 | 执行过程中输出含镜像名和策略说明（devcontainer/user-specified/fallback/cached 之一） |
+
+手动测试（在 Claude Code 会话中）：
+```bash
+/looper --command patterns     # 对应 eval 1
+/looper                        # 对应 eval 4（查看用法说明）
+```
+
+使用 skill-creator 的 eval loop 批量运行（如已安装）：
+```bash
+python ~/.claude/skills/skill-creator/scripts/run_loop.py \
+  --skill-path ~/.claude/commands/looper.md \
+  --evals-path evals/evals.json
+```
+
 ## 包结构
 
 ```

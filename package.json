@@ -2,5 +2,6 @@
   "name": "looper",
   "version": "1.0.0",
   "description": "纯净 CC 环境部署验证工具",
+  "pluginDistribution": false,
   "install": "bash install.sh"
 }
