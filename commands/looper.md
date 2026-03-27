@@ -119,10 +119,6 @@ fi
 # 最终 fallback
 IMAGE="${IMAGE:-cc-runtime-minimal}"
 
-# 代理（从 devcontainer.json remoteEnv 或默认）
-PROXY="http://hkproxy2.cicc.group:8080"
-NO_PROXY_LIST="localhost,127.0.0.1,::1,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16,*.local,/var/run/*.sock,repo.cicc.com"
-
 # looper/.claude.json（CC 入门跳过配置）
 CLAUDE_JSON="$(pwd)/looper/.claude.json"
 if [ ! -f "$CLAUDE_JSON" ]; then
@@ -266,12 +262,6 @@ docker run -d \
   -v "${CLEAN_CLAUDE}:/root/.claude" \
   -v "${CLAUDE_JSON}:/root/.claude.json" \
   -v "${LOOPER_TMP}:${WORK_DIR}" \
-  -e HTTP_PROXY="$PROXY" \
-  -e HTTPS_PROXY="$PROXY" \
-  -e http_proxy="$PROXY" \
-  -e https_proxy="$PROXY" \
-  -e NO_PROXY="$NO_PROXY_LIST" \
-  -e no_proxy="$NO_PROXY_LIST" \
   -e CLAUDE_CODE_MAX_OUTPUT_TOKENS="64000" \
   -e IS_SANDBOX=1 \
   -e JINA_API_KEY="${JINA_API_KEY:-}" \
