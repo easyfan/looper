@@ -169,6 +169,9 @@ fi
 # Inject eval runner + evals.json into LOOPER_TMP (enables T5)
 HAS_EVALS=false
 if [ -n "$EVALS_JSON" ]; then
+  DISABLE_T5=$(python3 -c "import json; d=json.load(open('$EVALS_JSON')); print(d.get('disable_t5', False))" 2>/dev/null)
+fi
+if [ -n "$EVALS_JSON" ] && [ "$DISABLE_T5" != "True" ]; then
   cp "$EVALS_JSON" "$LOOPER_TMP/evals.json"
   cat > "$LOOPER_TMP/run_eval_suite.py" << 'PYEOF'
 #!/usr/bin/env python3
@@ -231,6 +234,8 @@ PYEOF
   HAS_EVALS=true
   EVAL_COUNT=$(python3 -c "import json; d=json.load(open('$EVALS_JSON')); print(len(d['evals']))" 2>/dev/null || echo "?")
   echo "  eval suite: ${EVAL_COUNT} cases injected"
+elif [ "$DISABLE_T5" = "True" ]; then
+  echo "  eval suite: skipped (disable_t5=true in evals.json)"
 else
   echo "  eval suite: skipped (no evals.json found)"
 fi

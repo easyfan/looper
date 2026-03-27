@@ -1,5 +1,6 @@
 {
   "skill_name": "looper",
+  "disable_t5": true,
   "evals": [
     {
       "id": 1,
