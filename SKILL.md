@@ -1,6 +1,6 @@
 ---
 name: looper
-description: Deployment verification tool for Claude Code — runs installation integrity and trigger accuracy tests for a command/skill/plugin inside a clean Docker CC container. Used as Stage 5 of the skill-test pipeline.
+description: Deployment verification tool for Claude Code — runs installation integrity, trigger accuracy, and behavioral eval suite (T5) tests for a command/skill/plugin inside a clean Docker CC container. Used as Stage 5 of the skill-test pipeline.
 ---
 
 # looper package
@@ -36,6 +36,18 @@ On **first invocation**, looper determines the image using the following priorit
 
 The image used and the strategy applied are recorded in the execution report (Step 7 `.md` + Step 9 terminal output).
 
+## Test suite (T1–T5)
+
+| Test | Scope | Notes |
+|------|-------|-------|
+| T1 | CC availability | Verifies `claude --version` runs in the container |
+| T2 | Installation integrity | Confirms target files are present after install |
+| T3 | Trigger accuracy | Single `claude -p` call; checks the skill responds correctly |
+| T4 | Error handling | Graceful fallback on invalid input (command type only) |
+| T5 | Behavioral eval suite | Runs `evals.json` cases inside the container; each assertion graded via `claude -p`; skipped if no `evals.json` found or `"disable_t5": true` set |
+
+**T5 opt-out**: add `"disable_t5": true` at the top level of `evals.json` to skip T5 (required for self-referential tools like looper itself, where running `/looper` inside the container would require Docker-in-Docker).
+
 ## Known limitations
 
 | Scenario | Behavior |
@@ -47,4 +59,4 @@ The image used and the strategy applied are recorded in the execution report (St
 
 ## Purpose
 
-Validates skill behavior in a completely clean CC environment (no other toolchain installed) as Stage 5 of the skill-test pipeline — ensures the skill is triggerable after installation with no missing files.
+Validates skill behavior in a completely clean CC environment (no other toolchain installed) as Stage 5 of the skill-test pipeline — ensures the skill is triggerable after installation with no missing files, and that its behavioral evals pass in an isolated environment (T5).
