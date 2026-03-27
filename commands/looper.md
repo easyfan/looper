@@ -53,6 +53,19 @@ SKILL_PATH=$(find "$HOME/.claude" -maxdepth 5 -name "${NAME}" -type d 2>/dev/nul
 PLUGIN_PATH="$(pwd)/packer/${NAME}"
 ```
 
+```bash
+# Locate evals.json for T5 (optional — T5 skipped if not found)
+EVALS_JSON=""
+if [ "$TYPE" = "plugin" ]; then
+  EVALS_JSON="${PLUGIN_PATH}/evals/evals.json"
+elif [ "$TYPE" = "command" ]; then
+  EVALS_JSON="$(pwd)/packer/${NAME}/evals/evals.json"
+elif [ "$TYPE" = "skill" ]; then
+  EVALS_JSON="${SKILL_PATH}/evals/evals.json"
+fi
+[ -f "$EVALS_JSON" ] || EVALS_JSON=""
+```
+
 若目标不存在，输出后退出（**不启动容器**）：
 
 ```
@@ -152,6 +165,77 @@ elif [ "$TYPE" = "plugin" ]; then
 fi
 ```
 
+```bash
+# Inject eval runner + evals.json into LOOPER_TMP (enables T5)
+HAS_EVALS=false
+if [ -n "$EVALS_JSON" ]; then
+  cp "$EVALS_JSON" "$LOOPER_TMP/evals.json"
+  cat > "$LOOPER_TMP/run_eval_suite.py" << 'PYEOF'
+#!/usr/bin/env python3
+"""Looper T5: run evals.json inside clean CC container."""
+import json, os, subprocess, sys
+
+def run_claude(prompt, timeout=180):
+    try:
+        r = subprocess.run(
+            ['claude', '--dangerously-skip-permissions', '-p', prompt],
+            capture_output=True, text=True, timeout=timeout
+        )
+        return (r.stdout + r.stderr).strip(), True
+    except subprocess.TimeoutExpired:
+        return 'TIMEOUT', False
+    except Exception as e:
+        return str(e), False
+
+def grade(assertion, output):
+    prompt = (
+        "Does the following output satisfy the assertion? "
+        "Answer ONLY with YES or NO.\n\n"
+        f"Assertion: {assertion}\n\nOutput:\n{output[:2000]}"
+    )
+    result, ok = run_claude(prompt, timeout=30)
+    return ok and 'YES' in result.upper().split()
+
+def main():
+    evals_path = sys.argv[1] if len(sys.argv) > 1 else 'evals.json'
+    work_dir   = sys.argv[2] if len(sys.argv) > 2 else os.getcwd()
+    with open(evals_path) as f:
+        data = json.load(f)
+    cases = data.get('evals', [])
+    skill = data.get('skill_name', '?')
+    print(f'[T5] {skill} — {len(cases)} eval cases', flush=True)
+    passed = 0
+    for ev in cases:
+        eid, prompt, asserts, files = (
+            ev.get('id','?'), ev.get('prompt',''),
+            ev.get('assertions',[]), ev.get('files',[])
+        )
+        for fspec in files:
+            p = os.path.join(work_dir, fspec['path'])
+            os.makedirs(os.path.dirname(p), exist_ok=True)
+            open(p, 'w').write(fspec['content'])
+        print(f'  [{eid}] {prompt[:60]}', flush=True)
+        output, _ = run_claude(prompt)
+        results = [grade(a, output) for a in asserts]
+        if all(results):
+            passed += 1
+        for a, r in zip(asserts, results):
+            print(f'    {"✅" if r else "❌"} {a[:80]}', flush=True)
+    total = len(cases)
+    print(f'EVAL_SUITE_RESULT:{{"passed":{passed},"total":{total}}}', flush=True)
+    sys.exit(0 if passed == total else 1)
+
+if __name__ == '__main__':
+    main()
+PYEOF
+  HAS_EVALS=true
+  EVAL_COUNT=$(python3 -c "import json; d=json.load(open('$EVALS_JSON')); print(len(d['evals']))" 2>/dev/null || echo "?")
+  echo "  eval suite: ${EVAL_COUNT} cases injected"
+else
+  echo "  eval suite: skipped (no evals.json found)"
+fi
+```
+
 输出进度：
 
 ```
@@ -160,6 +244,7 @@ fi
   纯净 CC 目录：<LOOPER_TMP>
   目标：<TYPE>:<NAME>
   settings.json：已复制（API 凭证 + 模型配置）
+  eval suite：<N 条用例已注入 / skipped>
 ```
 
 ---
@@ -271,6 +356,36 @@ else
 fi
 ```
 
+### Test 5：eval suite（若 HAS_EVALS=true）
+
+```bash
+T5_PASS="skip"
+T5_RATE="—"
+
+if [ "$HAS_EVALS" = "true" ]; then
+  echo "  [T5] Running eval suite in container (may take several minutes)..."
+  T5_OUT=$(docker exec -w "$WORK_DIR" "$CONTAINER" \
+    python3 /looper_work/run_eval_suite.py /looper_work/evals.json /looper_work \
+    2>&1)
+
+  # Extract structured result from marker line
+  T5_JSON=$(echo "$T5_OUT" | grep "^EVAL_SUITE_RESULT:" | tail -1 | sed 's/^EVAL_SUITE_RESULT://')
+  if [ -n "$T5_JSON" ]; then
+    T5_PASSED=$(echo "$T5_JSON" | python3 -c "import json,sys; print(json.loads(sys.stdin.read())['passed'])" 2>/dev/null)
+    T5_TOTAL=$(echo "$T5_JSON"  | python3 -c "import json,sys; print(json.loads(sys.stdin.read())['total'])"  2>/dev/null)
+    T5_RATE="${T5_PASSED}/${T5_TOTAL}"
+    if [ "$T5_PASSED" = "$T5_TOTAL" ] && [ "${T5_TOTAL:-0}" -gt 0 ]; then
+      T5_PASS="pass"
+    else
+      T5_PASS="fail"
+    fi
+  else
+    T5_PASS="fail"
+    T5_RATE="parse error"
+  fi
+fi
+```
+
 ---
 
 ## Step 7：持久化报告
@@ -295,9 +410,13 @@ REPORT_FILE="${REPORT_DIR}/${TIMESTAMP}_looper_${NAME}.md"
 | T2 安装完整性 | ✅/❌ | <T2_OUT> |
 | T3 触发测试 | ✅/❌ | <T3_OUT 节选> |
 | T4 错误处理 | ✅/⏭️ | <T4_OUT 节选> |
+| T5 eval suite | ✅/❌/⏭️ | <T5_RATE>（若 ⏭️ 则无 evals.json）|
 
 ## 触发输出（节选）
 <T3_OUT>
+
+## Eval Suite 输出（节选，若 T5 执行）
+<T5_OUT 节选>
 
 ## 质量结论
 <PASS/FAIL>
@@ -327,6 +446,7 @@ rm -rf "$LOOPER_TMP"
   T2 安装完整性：     ✅ <NAME>.md 已挂载
   T3 触发测试：       ✅ 触发成功（<输出摘要>）
   T4 错误处理：       ✅ graceful fallback
+  T5 eval suite：    ✅ <T5_RATE> passed  |  ⏭️ skipped (no evals.json)
 
 报告：<REPORT_FILE>
 
@@ -334,14 +454,18 @@ rm -rf "$LOOPER_TMP"
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ```
 
+整体 PASS 条件：T1-T3 全部 pass，且（T5 pass 或 T5 skip）。T4 仅 command 类型强制；T5 skip 不计入失败。
+
 **若 FAIL**，追加：
 
 ```
 ⚠️ looper 是终态验证工具，不迭代。
 失败根因分类：
-  触发率 0%      → description 未收敛，回溯到 eval 阶段：/skill-test --from-stage 3
-  安装残缺        → 检查 SKILL.md 依赖声明，补全后重新安装
-  CC 启动失败     → 检查镜像可用性：docker pull <IMAGE>
+  触发率 0%            → description 未收敛，回溯到 eval 阶段：/skill-test --from-stage 3
+  安装残缺              → 检查 SKILL.md 依赖声明，补全后重新安装
+  CC 启动失败           → 检查镜像可用性：docker pull <IMAGE>
+  eval suite 未通过 (T5) → clean 环境行为与宿主机不一致；检查 description 是否依赖
+                          其他已安装 skill 或宿主机环境变量
 ```
 
 ---
@@ -355,4 +479,8 @@ rm -rf "$LOOPER_TMP"
 │   └── commands/<NAME>.md    ← 被测命令（command 模式）
 │       或 skills/<NAME>/     ← 被测技能（skill/plugin 模式）
 └── .claude.json              ← {"hasCompletedOnboarding":true}
+
+/looper_work/                 ← LOOPER_TMP 挂载点
+├── run_eval_suite.py         ← T5 eval runner（注入，若 evals.json 存在）
+└── evals.json                ← eval 套件（注入，若存在）
 ```
