@@ -11,7 +11,8 @@
         "检查了 ~/.claude/commands/patterns.md 的存在性（Glob/Bash/Read 任一）",
         "检查了 Docker 可用性（docker info 或等价命令）",
         "若 Docker 不可用，输出含 '⚠️ Docker 不可用' 并以 exit 0 退出，不报错",
-        "若 Docker 可用，输出或报告中含 'T1'/'T2'/'T3' 测试条目"
+        "若 Docker 可用，输出或报告中含 'T1'/'T2'/'T3' 测试条目",
+        "若 Docker 可用且 packer/patterns/evals/evals.json 存在，Step 4 输出含 'eval suite' 且标注已注入用例数"
       ]
     },
     {
@@ -108,6 +109,32 @@
         "若执行到 Step 4，输出含 '镜像策略：' 行",
         "若执行到 Step 9，终端输出含镜像和策略信息",
         "整体执行不崩溃，不因镜像策略逻辑抛出错误"
+      ]
+    },
+    {
+      "id": 9,
+      "prompt": "/looper --plugin patterns",
+      "expected_output": "解析出 TYPE=plugin NAME=patterns；packer/patterns/evals/evals.json 存在，Step 4 注入 run_eval_suite.py 和 evals.json 并输出注入提示；若 Docker 可用则 T5 在容器内执行并输出 EVAL_SUITE_RESULT 标记行；若 Docker 不可用则优雅退出，不崩溃。",
+      "files": [],
+      "assertions": [
+        "Step 4 进度输出含 'eval suite' 且标注了注入的用例数（如 '7 cases injected'）",
+        "向 LOOPER_TMP 写入了 run_eval_suite.py（Write 工具调用或 Bash cat heredoc）",
+        "向 LOOPER_TMP 复制了 evals.json（cp 或等价操作）",
+        "若 Docker 不可用，输出含 '⚠️ Docker 不可用' 并以 exit 0 退出，不报错",
+        "若 Docker 可用，输出含 'EVAL_SUITE_RESULT' 标记行或 T5 测试条目"
+      ]
+    },
+    {
+      "id": 10,
+      "prompt": "/looper --skill skill-creator",
+      "expected_output": "解析出 TYPE=skill NAME=skill-creator；在 ~/.claude 下找到 skill-creator 目录；~/.claude/skills/skill-creator/evals/evals.json 不存在，Step 4 输出 'eval suite: skipped'，HAS_EVALS=false；若 Docker 可用则 T1-T4 正常执行，T5 行显示 ⏭️ skip；整体结果不因 T5 跳过而标记为 FAIL。",
+      "files": [],
+      "assertions": [
+        "Step 4 进度输出含 'eval suite: skipped' 或 'no evals.json found'",
+        "未向 LOOPER_TMP 写入 run_eval_suite.py",
+        "若 Docker 可用，报告或终端输出中 T5 行显示 ⏭️ 或 skip，而非 ❌",
+        "若 Docker 可用，整体质量结论为 PASS（T5 skip 不计 FAIL）",
+        "整体执行不崩溃，有明确的 T5 跳过提示"
       ]
     }
   ]
