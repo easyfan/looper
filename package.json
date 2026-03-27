@@ -1,7 +1,7 @@
 {
   "name": "looper",
   "version": "1.0.0",
-  "description": "纯净 CC 环境部署验证工具",
+  "description": "Clean-environment deployment verification tool for Claude Code",
   "pluginDistribution": false,
   "install": "bash install.sh"
 }

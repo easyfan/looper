@@ -8,6 +8,8 @@ Deploy-time verification for Claude Code commands, skills, and plugins — runs 
 bash install.sh
 # or specify a custom Claude config directory
 bash install.sh --target ~/.claude
+# or using the CLAUDE_DIR convention
+CLAUDE_DIR=~/.claude bash install.sh
 ```
 
 Installs: `commands/looper.md → ~/.claude/commands/looper.md`

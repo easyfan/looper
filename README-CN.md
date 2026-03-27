@@ -8,6 +8,8 @@
 bash install.sh
 # 或指定 claude 目录
 bash install.sh --target ~/.claude
+# 或使用 CLAUDE_DIR 约定
+CLAUDE_DIR=~/.claude bash install.sh
 ```
 
 安装内容：`commands/looper.md → ~/.claude/commands/looper.md`
