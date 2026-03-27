@@ -12,6 +12,8 @@ bash install.sh --target ~/.claude
 
 安装内容：`commands/looper.md → ~/.claude/commands/looper.md`
 
+> ✅ **已验证**：已通过 skill-test 流水线自动化验证（looper Stage 5）。
+
 ## 使用
 
 ```

@@ -12,6 +12,8 @@ bash install.sh --target ~/.claude
 
 Installs: `commands/looper.md → ~/.claude/commands/looper.md`
 
+> ✅ **Verified**: covered by the skill-test pipeline (looper Stage 5).
+
 ## Usage
 
 ```

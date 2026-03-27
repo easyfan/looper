@@ -2,6 +2,7 @@
 set -euo pipefail
 
 # looper installer
+# ✅ Verified by automated tests: this install path is covered by the skill-test pipeline (looper Stage 5).
 #
 # Usage:
 #   bash install.sh [--target <claude_home>]
