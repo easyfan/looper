@@ -76,6 +76,20 @@ docker build -t cc-runtime-minimal assets/image/
 | 9 | T5 激活路径 — `/looper --plugin patterns`（evals.json 存在）| Step 4 注入 eval runner + evals.json；Docker 可用时 T5 执行并输出 EVAL_SUITE_RESULT |
 | 10 | T5 跳过路径 — `/looper --skill skill-creator`（skill 路径无 evals.json）| Step 4 输出 "eval suite: skipped"；T5 行显示 ⏭️；整体结果不因 T5 跳过而失败 |
 
+### 跳过 T5
+
+在 `evals.json` 顶层加 `"disable_t5": true` 可阻止 looper 在容器内执行 eval suite。适用场景：被测工具是 looper 自身（容器内运行 `/looper` 需要 Docker-in-Docker），或其他无法在干净环境中执行的工具。
+
+```json
+{
+  "skill_name": "looper",
+  "disable_t5": true,
+  "evals": [ ... ]
+}
+```
+
+Step 4 进度输出将显示 `eval suite: skipped (disable_t5=true in evals.json)`，整体结果不因此标记为 FAIL。
+
 手动测试（在 Claude Code 会话中）：
 ```bash
 /looper --command patterns     # 对应 eval 1

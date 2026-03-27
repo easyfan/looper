@@ -117,7 +117,7 @@ if [ -z "$IMAGE" ] && [ -f "$(pwd)/looper/loop.zsh" ]; then
 fi
 
 # 最终 fallback
-IMAGE="${IMAGE:-repo.cicc.com/fi-fiqtas-docker-local/fieq-env/strategy:claude-0324}"
+IMAGE="${IMAGE:-cc-runtime-minimal}"
 
 # 代理（从 devcontainer.json remoteEnv 或默认）
 PROXY="http://hkproxy2.cicc.group:8080"

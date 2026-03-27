@@ -76,6 +76,20 @@ Image source: [easyfan/agents-slim](https://github.com/easyfan/agents-slim)
 | 9 | T5 active — `/looper --plugin patterns` (evals.json present) | Step 4 injects eval runner + evals.json; if Docker available, T5 runs and outputs EVAL_SUITE_RESULT |
 | 10 | T5 skip — `/looper --skill skill-creator` (no evals.json at skill path) | Step 4 notes "eval suite: skipped"; T5 row shows ⏭️; overall result not failed due to T5 skip |
 
+### Opting out of T5
+
+Add `"disable_t5": true` at the top level of `evals.json` to prevent looper from running the eval suite inside the container. Use this when the skill under test is looper itself (running `/looper` inside the container would require Docker-in-Docker) or any other tool that cannot run inside the clean environment.
+
+```json
+{
+  "skill_name": "looper",
+  "disable_t5": true,
+  "evals": [ ... ]
+}
+```
+
+looper will note `eval suite: skipped (disable_t5=true in evals.json)` in the Step 4 progress output. The overall result is not failed.
+
 Manual testing (in a Claude Code session):
 ```bash
 /looper --command patterns     # eval 1
