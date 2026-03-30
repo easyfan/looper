@@ -37,3 +37,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 mkdir -p "${TARGET}/commands"
 cp "${SCRIPT_DIR}/commands/looper.md" "${TARGET}/commands/looper.md"
 echo "✅ looper installed → ${TARGET}/commands/looper.md"
+
+mkdir -p "${TARGET}/looper"
+cp "${SCRIPT_DIR}/assets/config/.claude.json" "${TARGET}/looper/.claude.json"
+echo "✅ looper config  → ${TARGET}/looper/.claude.json"
