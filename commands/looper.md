@@ -17,13 +17,26 @@ allowed-tools: ["Bash", "Read", "Write"]
 
 ---
 
-> **执行前提**：必须在包含 `packer/` 子目录的项目根目录下触发本命令。
+> **执行前提**：必须在包含 `packer/` 子目录的项目根目录下触发本命令。需先执行 `packer/looper/install.sh` 完成 looper 初始化安装（会安装 `.claude.json` 到 `~/.claude/looper/`）；缺失时 Step 4 会报错并提示完整路径。
 
 ## Step 0：解析参数
 
 从 `$ARGUMENTS` 提取：
 - `--plugin <name>` → NAME=`<name>`
 - `--image <image>` → USER_IMAGE=`<image>`（可选，显式指定镜像；覆盖 devcontainer 和状态缓存）
+
+```bash
+NAME=$(echo "$ARGUMENTS" | grep -oP '(?<=--plugin\s)\S+' || echo "")
+USER_IMAGE=$(echo "$ARGUMENTS" | grep -oP '(?<=--image\s)\S+' || echo "")
+if [ -z "$NAME" ]; then
+  echo "❌ 缺少 --plugin 参数"
+  echo "用法：/looper --plugin <pkg> [--image <image>]"
+  echo "示例："
+  echo "  /looper --plugin news-digest                     — 验证 news-digest 安装包"
+  echo "  /looper --plugin news-digest --image node:20-slim  — 使用指定镜像验证"
+  exit 1
+fi
+```
 
 若参数为空或格式不合法，输出用法说明后退出：
 
@@ -96,7 +109,7 @@ try:
   d = json.load(open(os.environ['LOOPER_STATE']))
   print(d.get('image','') + '|||' + d.get('strategy',''))
 except Exception as e:
-  print(f'⚠️ 状态文件解析失败（将重新检测镜像）：{e}', file=sys.stderr)
+  print(f'⚠️ 状态文件解析失败（将重新检测镜像）：{e}')
 ")
   if [ -n "$_prev" ]; then
     IMAGE="${_prev%%|||*}"
@@ -315,6 +328,7 @@ fi
 CONTAINER="looper_$(date +%s)"
 WORK_DIR="/looper_work"
 
+# settings.json 嵌套挂载：后挂载覆盖前挂载子路径，在 Docker 18.09+ 行为确定
 docker run -d \
   --name "$CONTAINER" \
   -w "$WORK_DIR" \
@@ -396,7 +410,7 @@ echo "  [T3] 触发测试（容器内 CC 调用，预计 30-180 秒）..."
 T3_OUT=$("${CC[@]}" -p "$TRIGGER_PROMPT" 2>&1)
 
 # 判断触发成功：不含拒绝词 / API 连接错误 / 空输出
-if echo "$T3_OUT" | grep -qi "command not found\|no skill\|unknown command\|无法完成\|无法处理\|不知道如何\|无法识别"; then
+if echo "$T3_OUT" | grep -qi "command not found\|no skill\|unknown command\|无法完成\|无法处理\|不知道如何\|无法识别\|抱歉\|我不能\|暂不支持\|没有该功能\|找不到\|不支持该\|无法找到"; then
   T3_PASS="fail"
 elif echo "$T3_OUT" | grep -qi "Unable to connect to API\|ENOTFOUND\|ECONNREFUSED\|connection refused\|network error\|Could not connect\|API connection"; then
   T3_PASS="fail"

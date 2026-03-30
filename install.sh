@@ -21,7 +21,7 @@ set -euo pipefail
 #     pull:  docker pull easyfan/agents-slim:cc-runtime-minimal && docker tag easyfan/agents-slim:cc-runtime-minimal cc-runtime-minimal
 #     build: docker build -t cc-runtime-minimal <pkg>/assets/image/
 #   After first run, image config is persisted to <project>/looper/.looper-state.json; reused on subsequent calls.
-#   To switch images: /looper --command <name> --image <image>
+#   To switch images: /looper --plugin <pkg> --image <image>
 
 TARGET="${CLAUDE_DIR:-${HOME}/.claude}"
 

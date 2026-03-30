@@ -19,12 +19,9 @@ Installs: `commands/looper.md → ~/.claude/commands/looper.md`
 ## Usage
 
 ```
-/looper --command <name>     # verify ~/.claude/commands/<name>.md
-/looper --skill <name>       # verify ~/.claude/skills/<name>/
-/looper --plugin <pkg>       # install and verify packer/<pkg>/
+/looper --plugin <pkg>                    # install and verify packer/<pkg>/
+/looper --plugin <pkg> --image <image>   # use an explicit container image
 ```
-
-Optional `--image <image>` flag to specify a container image explicitly.
 
 ## Requirements
 
@@ -37,10 +34,11 @@ looper resolves the container image using the following priority order (result i
 
 | Priority | Source | Notes |
 |----------|--------|-------|
-| 1 | `.devcontainer/devcontainer.json` | Auto-reads the project's standard image |
-| 2 | `--image <image>` flag | Explicit override |
-| 3 | Locally available `cc-runtime-minimal` | Previously built or pulled |
-| 4 | Fallback guidance | Outputs instructions for obtaining `cc-runtime-minimal` |
+| 1 | `--image <image>` flag | Explicit override, always wins |
+| 2 | `.looper-state.json` cache | Reuses image from previous run (skipped when `--image` is set) |
+| 3 | `.devcontainer/devcontainer.json` | Auto-reads the project's standard image |
+| 4 | Locally available `cc-runtime-minimal` | Previously built or pulled |
+| 5 | Fallback guidance | Outputs instructions for obtaining `cc-runtime-minimal` |
 
 ### Getting cc-runtime-minimal
 
@@ -65,16 +63,15 @@ Image source: [easyfan/agents-slim](https://github.com/easyfan/agents-slim)
 
 | ID | Scenario | What is verified |
 |----|----------|-----------------|
-| 1 | `/looper --command patterns` | Argument parsing, target file existence check, Docker availability; graceful exit when Docker unavailable; T5 triggered when Docker available (evals.json present) |
-| 2 | `/looper --command xyz_nonexistent_...` | Outputs "❌ target not found" when target is missing; no container started |
-| 3 | `/looper --plugin patterns` | TYPE=plugin path: locates `packer/` directory, runs `install.sh`, then tests |
-| 4 | `/looper` (no args) | Outputs full usage guide (all four argument types); no Docker operations |
-| 5 | `/looper --skill skill-creator` | TYPE=skill path: searches `~/.claude` for directory, builds clean environment, tests trigger |
-| 6 | `/looper --command patterns --image my-custom-registry:cc-runtime` | `--image` flag sets user-specified strategy, skips devcontainer detection |
-| 7 | Same as above (with pre-existing `.looper-state.json`) | Reads cached state file, reuses recorded image without re-detecting |
-| 8 | Image strategy output verification | Execution output contains image name and strategy label (devcontainer / user-specified / fallback / cached) |
-| 9 | T5 active — `/looper --plugin patterns` (evals.json present) | Step 4 injects eval runner + evals.json; if Docker available, T5 runs and outputs EVAL_SUITE_RESULT |
-| 10 | T5 skip — `/looper --skill skill-creator` (no evals.json at skill path) | Step 4 notes "eval suite: skipped"; T5 row shows ⏭️; overall result not failed due to T5 skip |
+| 1 | `/looper --plugin patterns` | Argument parsing, target path existence, Docker availability; graceful exit when Docker unavailable; T5 triggered when Docker available (evals.json present) |
+| 2 | `/looper --plugin xyz_nonexistent_...` | Outputs "❌ target not found" when `packer/<pkg>` is missing; no container started |
+| 3 | `/looper --plugin patterns` (full flow) | Locates `packer/patterns/`, runs `install.sh`, builds clean env, runs T1–T3 |
+| 4 | `/looper` (no args) | Outputs usage guide; no Docker operations |
+| 5 | `/looper --plugin patterns --image my-custom-registry:cc-runtime` | `--image` flag sets user-specified strategy (priority 1), skips devcontainer detection and cache |
+| 6 | Same as above (with pre-existing `.looper-state.json`) | Reads cached state file, reuses recorded image without re-detecting |
+| 7 | Image strategy output verification | Execution output contains image name and strategy label (devcontainer / user-specified / fallback / cached) |
+| 8 | T5 active — `/looper --plugin patterns` (evals.json present) | Step 4 injects eval runner + evals.json; if Docker available, T5 runs and outputs EVAL_SUITE_RESULT |
+| 9 | T5 skip — `disable_t5: true` in evals.json | Step 4 notes "eval suite: skipped (disable_t5=true)"; T5 row shows ⏭️; overall result not failed |
 
 ### Opting out of T5
 
@@ -92,8 +89,8 @@ looper will note `eval suite: skipped (disable_t5=true in evals.json)` in the St
 
 Manual testing (in a Claude Code session):
 ```bash
-/looper --command patterns     # eval 1
-/looper                        # eval 4 — view usage guide
+/looper --plugin patterns     # eval 1
+/looper                       # eval 4 — view usage guide
 ```
 
 Run all evals using skill-creator's eval loop (if installed):
