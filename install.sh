@@ -12,11 +12,12 @@ set -euo pipefail
 #   commands/looper.md → <claude_home>/commands/looper.md
 #
 # Runtime notes (not handled by install.sh — for reference only):
-#   Image selection strategy (4-level priority):
-#     1. devcontainer.json image (auto-detected)
-#     2. --image <image> flag (explicitly specified)
-#     3. Local cc-runtime-minimal (previously built or pulled)
-#     4. fallback: guide user to build or pull cc-runtime-minimal, then retry
+#   Image selection strategy (5-level priority):
+#     1. --image <image> flag (explicit override; not written to state cache)
+#     2. .looper-state.json cache (reuses image from previous run)
+#     3. devcontainer.json image (auto-detected)
+#     4. Local cc-runtime-minimal (previously built or pulled)
+#     5. fallback: guide user to build or pull cc-runtime-minimal, then retry
 #   Obtain cc-runtime-minimal (pick one):
 #     pull:  docker pull easyfan/agents-slim:cc-runtime-minimal && docker tag easyfan/agents-slim:cc-runtime-minimal cc-runtime-minimal
 #     build: docker build -t cc-runtime-minimal <pkg>/assets/image/

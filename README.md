@@ -1,6 +1,8 @@
 # looper
 
-Deploy-time verification for Claude Code commands, skills, and plugins — runs installation, trigger-accuracy, and behavioral eval suite (T5) tests inside a clean Docker CC container. Used as Stage 5 of the skill-test pipeline.
+Deploy-time verification for Claude Code commands, skills, and plugins — runs installation,
+trigger-accuracy, and behavioral eval suite (T5) tests inside a clean Docker CC container.
+Used as Stage 5 of the skill-test pipeline.
 
 ## Install
 
@@ -12,7 +14,9 @@ bash install.sh --target ~/.claude
 CLAUDE_DIR=~/.claude bash install.sh
 ```
 
-Installs: `commands/looper.md → ~/.claude/commands/looper.md`
+Installs:
+- `commands/looper.md → ~/.claude/commands/looper.md`
+- `assets/config/.claude.json → ~/.claude/looper/.claude.json`
 
 > ✅ **Verified**: covered by the skill-test pipeline (looper Stage 5).
 
@@ -30,12 +34,13 @@ Installs: `commands/looper.md → ~/.claude/commands/looper.md`
 
 ## Image Strategy
 
-looper resolves the container image using the following priority order (result is persisted to `looper/.looper-state.json` after the first run):
+looper resolves the container image using the following priority order (result is persisted
+to `looper/.looper-state.json` after the first run):
 
 | Priority | Source | Notes |
 |----------|--------|-------|
-| 1 | `--image <image>` flag | Explicit override, always wins |
-| 2 | `.looper-state.json` cache | Reuses image from previous run (skipped when `--image` is set) |
+| 1 | `--image <image>` flag | Explicit override, always wins; not written to state cache |
+| 2 | `.looper-state.json` cache | Reuses image from previous run |
 | 3 | `.devcontainer/devcontainer.json` | Auto-reads the project's standard image |
 | 4 | Locally available `cc-runtime-minimal` | Previously built or pulled |
 | 5 | Fallback guidance | Outputs instructions for obtaining `cc-runtime-minimal` |
@@ -59,7 +64,8 @@ Image source: [easyfan/agents-slim](https://github.com/easyfan/agents-slim)
 
 ### Evals
 
-`evals/evals.json` contains 10 test cases covering argument parsing, target resolution, Docker availability detection, image strategy branches, and T5 eval suite execution:
+`evals/evals.json` contains 10 test cases covering argument parsing, target resolution,
+Docker availability detection, image strategy branches, and T5 eval suite execution:
 
 | ID | Scenario | What is verified |
 |----|----------|-----------------|
@@ -75,7 +81,10 @@ Image source: [easyfan/agents-slim](https://github.com/easyfan/agents-slim)
 
 ### Opting out of T5
 
-Add `"disable_t5": true` at the top level of `evals.json` to prevent looper from running the eval suite inside the container. Use this when the skill under test is looper itself (running `/looper` inside the container would require Docker-in-Docker) or any other tool that cannot run inside the clean environment.
+Add `"disable_t5": true` at the top level of `evals.json` to prevent looper from running the
+eval suite inside the container. Use this when the skill under test is looper itself (running
+`/looper` inside the container would require Docker-in-Docker) or any other tool that cannot
+run inside the clean environment.
 
 ```json
 {
@@ -85,7 +94,8 @@ Add `"disable_t5": true` at the top level of `evals.json` to prevent looper from
 }
 ```
 
-looper will note `eval suite: skipped (disable_t5=true in evals.json)` in the Step 4 progress output. The overall result is not failed.
+looper will note `eval suite: skipped (disable_t5=true in evals.json)` in the Step 4 progress
+output. The overall result is not failed.
 
 Manual testing (in a Claude Code session):
 ```bash
@@ -104,9 +114,10 @@ python ~/.claude/skills/skill-creator/scripts/run_loop.py \
 
 ```
 looper/
-├── commands/looper.md      # installed to ~/.claude/commands/
+├── commands/looper.md          # installed to ~/.claude/commands/
 ├── assets/
-│   └── image/              # cc-runtime-minimal image source
+│   ├── config/.claude.json     # installed to ~/.claude/looper/
+│   └── image/                  # cc-runtime-minimal image source
 │       ├── Dockerfile
 │       └── .github/workflows/build-push.yml
 ├── evals/evals.json
