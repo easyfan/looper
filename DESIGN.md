@@ -76,7 +76,7 @@ looper 的使用者是 plugin 的开发者——而开发者同时也是 plugin 
 | B4 | `claude plugin install <name>` | 返回 Successfully installed |
 | B5 | SHA 验证 | cache 里的 git sha == marketplace registry sha（防 stale cache）|
 | B6 | 文件完整性 | commands/agents/skills 各文件存在于 plugin cache 目录 |
-| B7 | `claude plugin uninstall <name>` | 返回 Successfully uninstalled；cache 清空；installed_plugins.json 条目移除 |
+| B7 | `claude plugin uninstall <name>` | 返回 Successfully uninstalled；installed_plugins.json 条目移除（cache 目录由 CC 保留，不作断言）|
 | B8 | `claude plugin marketplace remove <name>` | 返回 Successfully removed |
 | B9 | 验证干净 | settings.json 中 `extraKnownMarketplaces.<name>` 不存在 |
 

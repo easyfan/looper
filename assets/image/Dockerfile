@@ -10,7 +10,7 @@
 
 FROM node:20-slim
 
-RUN apt-get update && apt-get install -y python3 --no-install-recommends \
+RUN apt-get update && apt-get install -y python3 git ca-certificates --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 RUN npm install -g @anthropic-ai/claude-code --quiet
