@@ -184,7 +184,7 @@ CLAUDE_JSON_SRC="$HOME/.claude/looper/.claude.json"
 
 ## Step 4：构建纯净 CC 工作目录
 
-> **纯净原则**：容器内 `~/.claude/` 只含 `settings.json`（API 凭证，以只读 volume 挂载，不复制到临时目录）+ 被测目标，不挂载宿主机完整 `~/.claude/`，确保零其他工具链干扰。
+> **纯净原则**：容器内 `~/.claude/` 只含构造好的 `settings.json`（仅 API 凭证，去除 hooks/permissions 等宿主机相关配置）+ 被测目标，不挂载宿主机完整 `~/.claude/`，确保零其他工具链干扰。
 
 ```bash
 LOOPER_TMP=$(mktemp -d "${HOME}/looper_XXXXXX")
@@ -196,12 +196,33 @@ mkdir -p "$CLEAN_CLAUDE"
 CONTAINER=""
 trap 'docker rm -f "${CONTAINER}" 2>/dev/null || true; rm -rf "${LOOPER_TMP:-}"' EXIT INT TERM
 
-# settings.json 通过只读 volume 挂载进容器，不再复制到临时目录
-# （避免 API token 在宿主机临时路径形成明文副本）
 if [ ! -f "$HOME/.claude/settings.json" ]; then
   echo "❌ settings.json 不存在：$HOME/.claude/settings.json（请先完成 Claude Code 初始化）"
   exit 1
 fi
+
+# 构造 Plan A 容器 settings.json（仅 API 凭证，去除 hooks/permissions 避免容器内挂起）
+# - ANTHROPIC_AUTH_TOKEN → ANTHROPIC_API_KEY 兼容转换（OpenRouter 场景）
+# - 剔除 ANTHROPIC_MODEL / ANTHROPIC_DEFAULT_*：这些是宿主机 OpenRouter 格式的模型名
+#   （如 "anthropic/claude-sonnet-4.6"），传入容器后 CC 会用 Anthropic 原生 ID 格式调用
+#   OpenRouter，导致模型找不到、claude -p 静默返回空
+python3 -c "
+import json, sys, re
+src = json.load(open('$HOME/.claude/settings.json'))
+out = {}
+for key in ('env', 'apiKey', 'oauthAccount'):
+    if key in src:
+        out[key] = src[key]
+env = out.get('env', {})
+# 剔除模型相关 env（CC 使用默认 model 即可）
+for k in list(env.keys()):
+    if re.match(r'ANTHROPIC_(MODEL|DEFAULT_)', k):
+        del env[k]
+if 'ANTHROPIC_AUTH_TOKEN' in env and 'ANTHROPIC_API_KEY' not in env:
+    env['ANTHROPIC_API_KEY'] = env['ANTHROPIC_AUTH_TOKEN']
+out['env'] = env
+print(json.dumps(out, indent=2))
+" > "$CLEAN_CLAUDE/settings.json"
 
 # 复制 .claude.json 到 LOOPER_TMP（读写挂载，CC 启动时需写入此文件）
 if [ ! -f "$CLAUDE_JSON_SRC" ]; then
@@ -300,7 +321,7 @@ fi
   纯净 CC 目录：<LOOPER_TMP>
   目标：plugin:<NAME>
   plugin 源文件：只读挂载 <PLUGIN_PATH> → /plugin_src
-  settings.json：只读挂载（API 凭证 + 模型配置，不落盘到临时目录）
+  settings.json：已构造（仅 API 凭证，hooks/permissions 已剥离）
   eval suite：<N 条用例已注入 / skipped>
 ```
 
@@ -312,12 +333,10 @@ fi
 CONTAINER="looper_$(date +%s)"
 WORK_DIR="/looper_work"
 
-# settings.json 嵌套挂载：后挂载覆盖前挂载子路径，在 Docker 18.09+ 行为确定
 docker run -d \
   --name "$CONTAINER" \
   -w "$WORK_DIR" \
   -v "${CLEAN_CLAUDE}:/root/.claude" \
-  -v "$HOME/.claude/settings.json:/root/.claude/settings.json:ro" \
   -v "${LOOPER_TMP}/.claude.json:/root/.claude.json" \
   -v "${LOOPER_TMP}:${WORK_DIR}" \
   -v "${PLUGIN_PATH}:/plugin_src:ro" \
@@ -347,8 +366,16 @@ CC=(docker exec -w "$WORK_DIR" "$CONTAINER" claude --dangerously-skip-permission
 
 ```bash
 # 静态文件检查，无需容器。marketplace.json 跳过（pending #42412）
+# 检查宿主机 claude CLI 是否可用
+if ! command -v claude > /dev/null 2>&1; then
+  echo "❌ 宿主机未找到 claude CLI（T0 需要：claude plugin validate）"
+  echo "  请先安装 Claude Code：https://claude.ai/code"
+  T0_PASS="fail"
+  T0_OUT="claude CLI not found"
+else
 T0_OUT=$(claude --dangerously-skip-permissions plugin validate "${PLUGIN_PATH}/.claude-plugin/plugin.json" 2>&1)
 echo "$T0_OUT" | grep -q "Validation passed" && T0_PASS="pass" || T0_PASS="fail"
+fi
 echo "  [T0] plugin.json: $T0_PASS"
 ```
 
@@ -411,19 +438,28 @@ done
 echo "  [T2] $T2_OUT"
 ```
 
-### Test 2b (Plan B)：claude plugin install 路径完整验证 — B1–B9
+### Test 2b (Plan B)：claude plugin install 路径完整验证 — B1–B8
 
 ```bash
 # 构造 Plan B 专用 settings.json（仅 API 凭证，extraKnownMarketplaces 初始为空）
+# 同 Plan A：去除模型覆盖 + ANTHROPIC_AUTH_TOKEN → ANTHROPIC_API_KEY 兼容转换
 PLAN_B_CLAUDE="$LOOPER_TMP/claude_home_b"
 PLAN_B_SETTINGS="$PLAN_B_CLAUDE/settings.json"
 mkdir -p "$PLAN_B_CLAUDE"
 python3 -c "
-import json, sys
+import json, sys, re
 src = json.load(open('$HOME/.claude/settings.json'))
 out = {}
-if 'env' in src:
-    out['env'] = src['env']
+for key in ('env', 'apiKey', 'oauthAccount'):
+    if key in src:
+        out[key] = src[key]
+env = out.get('env', {})
+for k in list(env.keys()):
+    if re.match(r'ANTHROPIC_(MODEL|DEFAULT_)', k):
+        del env[k]
+if 'ANTHROPIC_AUTH_TOKEN' in env and 'ANTHROPIC_API_KEY' not in env:
+    env['ANTHROPIC_API_KEY'] = env['ANTHROPIC_AUTH_TOKEN']
+out['env'] = env
 print(json.dumps(out, indent=2))
 " > "$PLAN_B_SETTINGS"
 
@@ -442,7 +478,12 @@ docker run -d \
   -u root \
   "$IMAGE" \
   sleep infinity \
-  || { echo "❌ Plan B 容器启动失败"; T2B_PASS="fail"; T2B_OUT="container start failed"; }
+  || { echo "❌ Plan B 容器启动失败"; T2B_PASS="fail"; T2B_OUT="container start failed"
+    docker rm -f "$CONTAINER_B" 2>/dev/null || true; }
+
+if [[ "$T2B_PASS" == "fail" && "$T2B_OUT" == "container start failed" ]]; then
+  echo "  [T2b] 跳过 B1–B8（容器启动失败）"
+else
 
 CCB=(docker exec "$CONTAINER_B" claude --dangerously-skip-permissions)
 
@@ -523,12 +564,17 @@ for _p in $B1_PASS $B2_PASS $B3_PASS $B4_PASS $B5_PASS $B6_PASS $B7_PASS $B8_PAS
 done
 echo "  [T2b] $T2B_OUT"
 
+fi
+
 docker rm -f "$CONTAINER_B" 2>/dev/null || true
 ```
 
 ### Test 3：触发测试（核心）
 
 ```bash
+# T3 前重新安装（Plan A 的 A6 已卸载，需恢复以测试触发）
+docker exec "$CONTAINER" bash -c "CLAUDE_DIR=/root/.claude bash /plugin_src/install.sh 2>&1" > /dev/null
+
 # 优先从宿主机源路径读 SKILL.md（不依赖 install.sh 是否写入 CLEAN_CLAUDE）
 if [ -f "${PLUGIN_PATH}/SKILL.md" ]; then
   SKILL_MD_PATH="${PLUGIN_PATH}/SKILL.md"
