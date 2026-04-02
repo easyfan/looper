@@ -402,6 +402,125 @@ done
 echo "  [T2] $T2_OUT"
 ```
 
+### Test 2b (Plan B)：claude plugin install 路径完整验证 — B1–B9
+
+```bash
+# 构造 Plan B 专用 settings.json（仅 API 凭证，extraKnownMarketplaces 初始为空）
+PLAN_B_CLAUDE="$LOOPER_TMP/claude_home_b"
+PLAN_B_SETTINGS="$PLAN_B_CLAUDE/settings.json"
+mkdir -p "$PLAN_B_CLAUDE"
+python3 -c "
+import json, sys
+src = json.load(open('$HOME/.claude/settings.json'))
+out = {}
+if 'env' in src:
+    out['env'] = src['env']
+print(json.dumps(out, indent=2))
+" > "$PLAN_B_SETTINGS"
+
+# 启动 Plan B 专用容器（settings.json 可写，claude plugin marketplace add 需要写入）
+CONTAINER_B="looper_b_$(date +%s)"
+trap 'docker rm -f "${CONTAINER}" "${CONTAINER_B}" 2>/dev/null || true; rm -rf "${LOOPER_TMP:-}"' EXIT INT TERM
+
+docker run -d \
+  --name "$CONTAINER_B" \
+  -v "${PLAN_B_CLAUDE}:/root/.claude" \
+  -v "${LOOPER_TMP}/.claude.json:/root/.claude.json" \
+  -v "${PLUGIN_PATH}:/plugin_src:ro" \
+  "${PROXY_ENV_ARGS[@]}" \
+  -e CLAUDE_CODE_MAX_OUTPUT_TOKENS="64000" \
+  -e IS_SANDBOX=1 \
+  -u root \
+  "$IMAGE" \
+  sleep infinity \
+  || { echo "❌ Plan B 容器启动失败"; T2B_PASS="fail"; T2B_OUT="container start failed"; }
+
+CCB=(docker exec "$CONTAINER_B" claude --dangerously-skip-permissions)
+
+# B1: marketplace add — settings.json 写入 extraKnownMarketplaces.<NAME>
+B1_OUT=$("${CCB[@]}" plugin marketplace add "easyfan/$NAME" 2>&1)
+B1_SETTINGS=$(python3 -c "
+import json
+d = json.load(open('$PLAN_B_SETTINGS'))
+mkts = d.get('extraKnownMarketplaces', {})
+print('yes' if '$NAME' in mkts else 'no')
+" 2>/dev/null || echo "no")
+echo "$B1_OUT" | grep -q "Successfully" && [[ "$B1_SETTINGS" == "yes" ]] \
+  && B1_PASS="pass" || B1_PASS="fail"
+
+# B2: marketplace update — Successfully updated
+B2_OUT=$("${CCB[@]}" plugin marketplace update "$NAME" 2>&1)
+echo "$B2_OUT" | grep -q "Successfully" && B2_PASS="pass" || B2_PASS="fail"
+
+# B3: schema validation — plugin.json valid（marketplace.json 跳过，pending #42412）
+B3_OUT=$("${CCB[@]}" plugin validate /plugin_src/.claude-plugin/plugin.json 2>&1)
+echo "$B3_OUT" | grep -q "Validation passed" && B3_PASS="pass" || B3_PASS="fail"
+
+# B4: install — Successfully installed
+B4_OUT=$("${CCB[@]}" plugin install "$NAME" 2>&1)
+echo "$B4_OUT" | grep -q "Successfully installed" && B4_PASS="pass" || B4_PASS="fail"
+
+# B5: SHA verification — cache sha == marketplace registry sha
+B5_OUT=$(docker exec "$CONTAINER_B" bash -c "
+  reg=\$HOME/.claude/plugins/marketplaces/$NAME/.claude-plugin/marketplace.json
+  [ -f \"\$reg\" ] || { echo 'registry not found'; exit 1; }
+  reg_sha=\$(python3 -c \"import json; d=json.load(open('\$reg')); print(d['plugins'][0]['source']['sha'][:7])\" 2>/dev/null) \
+    || { echo 'parse error'; exit 1; }
+  cache_dir=\$(ls -d \$HOME/.claude/plugins/cache/$NAME/$NAME/*/ 2>/dev/null | head -1)
+  [ -n \"\$cache_dir\" ] || { echo 'no cache dir'; exit 1; }
+  inst_sha=\$(cd \"\$cache_dir\" && git log --oneline -1 2>/dev/null | awk '{print \$1}')
+  if [[ \"\$inst_sha\" == \"\$reg_sha\"* ]] || [[ \"\$reg_sha\" == \"\$inst_sha\"* ]]; then
+    echo \"match:\$inst_sha\"
+  else
+    echo \"mismatch:installed=\$inst_sha registry=\$reg_sha\"
+  fi
+" 2>&1)
+echo "$B5_OUT" | grep -q "^match:" && B5_PASS="pass" || B5_PASS="fail"
+
+# B6: file presence in plugin cache
+B6_OUT=$(docker exec "$CONTAINER_B" bash -c "
+  cache_dir=\$(ls -d \$HOME/.claude/plugins/cache/$NAME/$NAME/*/ 2>/dev/null | head -1)
+  [ -n \"\$cache_dir\" ] || { echo 'no cache dir'; exit 1; }
+  find \"\$cache_dir\" -mindepth 2 \( -type f -o -type d \) 2>/dev/null | head -20
+" 2>&1)
+[[ -n "$B6_OUT" ]] && B6_PASS="pass" || B6_PASS="fail"
+
+# B7: uninstall — Successfully uninstalled；installed_plugins.json 条目移除
+B7_OUT=$("${CCB[@]}" plugin uninstall "$NAME" 2>&1)
+echo "$B7_OUT" | grep -q "Successfully uninstalled" && B7_PASS="pass" || B7_PASS="fail"
+B7_ENTRY=$(docker exec "$CONTAINER_B" python3 -c "
+import json, os
+p = os.path.expanduser('~/.claude/plugins/installed_plugins.json')
+if not os.path.exists(p): print('clean'); exit()
+d = json.load(open(p))
+print('dirty' if '$NAME' in d else 'clean')
+" 2>/dev/null || echo "clean")
+[[ "$B7_ENTRY" == "clean" ]] || B7_PASS="fail"
+
+# B8: marketplace remove — Successfully removed
+B8_OUT=$("${CCB[@]}" plugin marketplace remove "$NAME" 2>&1)
+echo "$B8_OUT" | grep -q "Successfully removed" && B8_PASS="pass" || B8_PASS="fail"
+
+# B9: verify settings.json clean — extraKnownMarketplaces.<NAME> 不存在
+B9_CLEAN=$(python3 -c "
+import json
+d = json.load(open('$PLAN_B_SETTINGS'))
+mkts = d.get('extraKnownMarketplaces', {})
+print('clean' if '$NAME' not in mkts else 'dirty')
+" 2>/dev/null || echo "dirty")
+[[ "$B9_CLEAN" == "clean" ]] && B9_PASS="pass" || B9_PASS="fail"
+
+# 汇总 T2b
+T2B_OUT="B1:${B1_PASS} B2:${B2_PASS} B3:${B3_PASS} B4:${B4_PASS} B5:${B5_PASS} B6:${B6_PASS} B7:${B7_PASS} B8:${B8_PASS} B9:${B9_PASS}"
+T2B_PASS="pass"
+for _p in $B1_PASS $B2_PASS $B3_PASS $B4_PASS $B5_PASS $B6_PASS $B7_PASS $B8_PASS $B9_PASS; do
+  [[ "$_p" != "pass" ]] && T2B_PASS="fail"
+done
+echo "  [T2b] $T2B_OUT"
+
+docker rm -f "$CONTAINER_B" 2>/dev/null || true
+```
+
 ### Test 3：触发测试（核心）
 
 ```bash
@@ -492,7 +611,8 @@ REPORT_FILE="${REPORT_DIR}/${TIMESTAMP}_looper_${NAME}.md"
 | 测试 | 结果 | 详情 |
 |------|------|------|
 | T1 CC 可用性 | ✅/❌ | <T1_OUT> |
-| T2 安装完整性 | ✅/❌ | <T2_OUT> |
+| T2 Plan A install.sh | ✅/❌ | <T2_OUT> |
+| T2b Plan B plugin install | ✅/❌ | <T2B_OUT> |
 | T3 触发测试 | ✅/❌ | <T3_OUT 节选> |
 | T5 eval suite | ✅/❌/⏭️ | <T5_RATE>（若 ⏭️ 则无 evals.json）|
 | 应用策略 | — | <IMAGE_STRATEGY> |
@@ -527,10 +647,11 @@ rm -rf "$LOOPER_TMP"
 目标：plugin:<NAME>
 镜像：<IMAGE>（策略：<IMAGE_STRATEGY>）
 
-  T1 CC 可用性：     ✅ <version>
-  T2 安装完整性：     ✅ 安装物已挂载
-  T3 触发测试：       ✅ 触发成功（<输出摘要>）
-  T5 eval suite：    ✅ <T5_RATE> passed  |  ⏭️ skipped (no evals.json)
+  T1  CC 可用性：          ✅ <version>
+  T2  Plan A install.sh：  ✅ A1–A7 all pass
+  T2b Plan B plugin install：✅ B1–B9 all pass
+  T3  触发测试：            ✅ 触发成功（<输出摘要>）
+  T5  eval suite：         ✅ <T5_RATE> passed  |  ⏭️ skipped (no evals.json)
 
 报告：<REPORT_FILE>
 
@@ -538,7 +659,7 @@ rm -rf "$LOOPER_TMP"
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ```
 
-整体 PASS 条件：T1-T3 全部 pass，且（T5 pass 或 T5 skip）。
+整体 PASS 条件：T1、T2、T2b、T3 全部 pass，且（T5 pass 或 T5 skip）。
 
 **若 FAIL**，追加：
 
