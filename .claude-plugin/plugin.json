@@ -1,0 +1,13 @@
+{
+  "name": "looper",
+  "version": "0.2.0",
+  "description": "Pre-publish deployment verifier for Claude Code plugins. Runs install integrity and trigger accuracy tests in a clean Docker CC container.",
+  "author": {
+    "name": "easyfan",
+    "email": "zhengfan@apache.org"
+  },
+  "homepage": "https://github.com/easyfan/looper",
+  "repository": "https://github.com/easyfan/looper",
+  "license": "MIT",
+  "keywords": ["testing", "plugin", "deployment", "docker", "ci"]
+}
