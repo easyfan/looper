@@ -72,16 +72,15 @@ looper 的使用者是 plugin 的开发者——而开发者同时也是 plugin 
 |------|------|------|
 | B1 | `claude plugin marketplace add easyfan/<name>` | settings.json 写入 `extraKnownMarketplaces.<name>` |
 | B2 | `claude plugin marketplace update <name>` | 返回 Successfully updated |
-| B3 | `claude plugin validate .claude-plugin/plugin.json` | Validation passed（plugin.json schema 合规）|
-| B4 | `claude plugin install <name>` | 返回 Successfully installed |
-| B5 | SHA 验证 | cache 里的 git sha == marketplace registry sha（防 stale cache）|
-| B6 | 文件完整性 | commands/agents/skills 各文件存在于 plugin cache 目录 |
-| B7 | `claude plugin uninstall <name>` | 返回 Successfully uninstalled；installed_plugins.json 条目移除（cache 目录由 CC 保留，不作断言）|
-| B8 | `claude plugin marketplace remove <name>` | 返回 Successfully removed |
-| B9 | 验证干净 | settings.json 中 `extraKnownMarketplaces.<name>` 不存在 |
+| B3 | `claude plugin install <name>` | 返回 Successfully installed |
+| B4 | SHA 验证 | cache 里的 git sha == marketplace registry sha（防 stale cache）|
+| B5 | 文件完整性 | commands/agents/skills 各文件存在于 plugin cache 目录 |
+| B6 | `claude plugin uninstall <name>` | 返回 Successfully uninstalled；installed_plugins.json 条目移除（cache 目录由 CC 保留，不作断言）|
+| B7 | `claude plugin marketplace remove <name>` | 返回 Successfully removed |
+| B8 | 验证干净 | settings.json 中 `extraKnownMarketplaces.<name>` 不存在 |
 
-**已知跳过项**：  
-`claude plugin validate` 对 marketplace.json 的 `$schema`/`description` 字段报 unrecognized（validator bug，已报 anthropics/claude-code#42412），B3 仅验证 plugin.json。
+**plugin.json schema 验证（T0）**：从 Plan B 移出，在宿主机执行一次，A/B 共用。  
+`claude plugin validate` 对 marketplace.json 的 `$schema`/`description` 字段报 unrecognized（validator bug，已报 anthropics/claude-code#42412），T0 仅验证 plugin.json。
 
 **marketplace add 参数格式**（已验证，CC v2.1.90）：
 ```bash

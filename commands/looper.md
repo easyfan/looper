@@ -343,6 +343,15 @@ docker run -d \
 CC=(docker exec -w "$WORK_DIR" "$CONTAINER" claude --dangerously-skip-permissions)
 ```
 
+### Test 0：plugin.json schema 验证（宿主机，A/B 共用，执行一次）
+
+```bash
+# 静态文件检查，无需容器。marketplace.json 跳过（pending #42412）
+T0_OUT=$(claude --dangerously-skip-permissions plugin validate "${PLUGIN_PATH}/.claude-plugin/plugin.json" 2>&1)
+echo "$T0_OUT" | grep -q "Validation passed" && T0_PASS="pass" || T0_PASS="fail"
+echo "  [T0] plugin.json: $T0_PASS"
+```
+
 ### Test 1：CC 可用性
 
 ```bash
@@ -452,16 +461,12 @@ echo "$B1_OUT" | grep -q "Successfully" && [[ "$B1_SETTINGS" == "yes" ]] \
 B2_OUT=$("${CCB[@]}" plugin marketplace update "$NAME" 2>&1)
 echo "$B2_OUT" | grep -q "Successfully" && B2_PASS="pass" || B2_PASS="fail"
 
-# B3: schema validation — plugin.json valid（marketplace.json 跳过，pending #42412）
-B3_OUT=$("${CCB[@]}" plugin validate /plugin_src/.claude-plugin/plugin.json 2>&1)
-echo "$B3_OUT" | grep -q "Validation passed" && B3_PASS="pass" || B3_PASS="fail"
+# B3: install — Successfully installed
+B3_OUT=$("${CCB[@]}" plugin install "$NAME" 2>&1)
+echo "$B3_OUT" | grep -q "Successfully installed" && B3_PASS="pass" || B3_PASS="fail"
 
-# B4: install — Successfully installed
-B4_OUT=$("${CCB[@]}" plugin install "$NAME" 2>&1)
-echo "$B4_OUT" | grep -q "Successfully installed" && B4_PASS="pass" || B4_PASS="fail"
-
-# B5: SHA verification — cache sha == marketplace registry sha
-B5_OUT=$(docker exec "$CONTAINER_B" bash -c "
+# B4: SHA verification — cache sha == marketplace registry sha
+B4_OUT=$(docker exec "$CONTAINER_B" bash -c "
   reg=\$HOME/.claude/plugins/marketplaces/$NAME/.claude-plugin/marketplace.json
   [ -f \"\$reg\" ] || { echo 'registry not found'; exit 1; }
   reg_sha=\$(python3 -c \"import json; d=json.load(open('\$reg')); print(d['plugins'][0]['source']['sha'][:7])\" 2>/dev/null) \
@@ -475,45 +480,45 @@ B5_OUT=$(docker exec "$CONTAINER_B" bash -c "
     echo \"mismatch:installed=\$inst_sha registry=\$reg_sha\"
   fi
 " 2>&1)
-echo "$B5_OUT" | grep -q "^match:" && B5_PASS="pass" || B5_PASS="fail"
+echo "$B4_OUT" | grep -q "^match:" && B4_PASS="pass" || B4_PASS="fail"
 
-# B6: file presence in plugin cache
-B6_OUT=$(docker exec "$CONTAINER_B" bash -c "
+# B5: file presence in plugin cache
+B5_OUT=$(docker exec "$CONTAINER_B" bash -c "
   cache_dir=\$(ls -d \$HOME/.claude/plugins/cache/$NAME/$NAME/*/ 2>/dev/null | head -1)
   [ -n \"\$cache_dir\" ] || { echo 'no cache dir'; exit 1; }
   find \"\$cache_dir\" -mindepth 2 \( -type f -o -type d \) 2>/dev/null | head -20
 " 2>&1)
-[[ -n "$B6_OUT" ]] && B6_PASS="pass" || B6_PASS="fail"
+[[ -n "$B5_OUT" ]] && B5_PASS="pass" || B5_PASS="fail"
 
-# B7: uninstall — Successfully uninstalled；installed_plugins.json 条目移除
-B7_OUT=$("${CCB[@]}" plugin uninstall "$NAME" 2>&1)
-echo "$B7_OUT" | grep -q "Successfully uninstalled" && B7_PASS="pass" || B7_PASS="fail"
-B7_ENTRY=$(docker exec "$CONTAINER_B" python3 -c "
+# B6: uninstall — Successfully uninstalled；installed_plugins.json 条目移除
+B6_OUT=$("${CCB[@]}" plugin uninstall "$NAME" 2>&1)
+echo "$B6_OUT" | grep -q "Successfully uninstalled" && B6_PASS="pass" || B6_PASS="fail"
+B6_ENTRY=$(docker exec "$CONTAINER_B" python3 -c "
 import json, os
 p = os.path.expanduser('~/.claude/plugins/installed_plugins.json')
 if not os.path.exists(p): print('clean'); exit()
 d = json.load(open(p))
 print('dirty' if '$NAME' in d else 'clean')
 " 2>/dev/null || echo "clean")
-[[ "$B7_ENTRY" == "clean" ]] || B7_PASS="fail"
+[[ "$B6_ENTRY" == "clean" ]] || B6_PASS="fail"
 
-# B8: marketplace remove — Successfully removed
-B8_OUT=$("${CCB[@]}" plugin marketplace remove "$NAME" 2>&1)
-echo "$B8_OUT" | grep -q "Successfully removed" && B8_PASS="pass" || B8_PASS="fail"
+# B7: marketplace remove — Successfully removed
+B7_OUT=$("${CCB[@]}" plugin marketplace remove "$NAME" 2>&1)
+echo "$B7_OUT" | grep -q "Successfully removed" && B7_PASS="pass" || B7_PASS="fail"
 
-# B9: verify settings.json clean — extraKnownMarketplaces.<NAME> 不存在
-B9_CLEAN=$(python3 -c "
+# B8: verify settings.json clean — extraKnownMarketplaces.<NAME> 不存在
+B8_CLEAN=$(python3 -c "
 import json
 d = json.load(open('$PLAN_B_SETTINGS'))
 mkts = d.get('extraKnownMarketplaces', {})
 print('clean' if '$NAME' not in mkts else 'dirty')
 " 2>/dev/null || echo "dirty")
-[[ "$B9_CLEAN" == "clean" ]] && B9_PASS="pass" || B9_PASS="fail"
+[[ "$B8_CLEAN" == "clean" ]] && B8_PASS="pass" || B8_PASS="fail"
 
 # 汇总 T2b
-T2B_OUT="B1:${B1_PASS} B2:${B2_PASS} B3:${B3_PASS} B4:${B4_PASS} B5:${B5_PASS} B6:${B6_PASS} B7:${B7_PASS} B8:${B8_PASS} B9:${B9_PASS}"
+T2B_OUT="B1:${B1_PASS} B2:${B2_PASS} B3:${B3_PASS} B4:${B4_PASS} B5:${B5_PASS} B6:${B6_PASS} B7:${B7_PASS} B8:${B8_PASS}"
 T2B_PASS="pass"
-for _p in $B1_PASS $B2_PASS $B3_PASS $B4_PASS $B5_PASS $B6_PASS $B7_PASS $B8_PASS $B9_PASS; do
+for _p in $B1_PASS $B2_PASS $B3_PASS $B4_PASS $B5_PASS $B6_PASS $B7_PASS $B8_PASS; do
   [[ "$_p" != "pass" ]] && T2B_PASS="fail"
 done
 echo "  [T2b] $T2B_OUT"
@@ -610,6 +615,7 @@ REPORT_FILE="${REPORT_DIR}/${TIMESTAMP}_looper_${NAME}.md"
 ## 测试结果
 | 测试 | 结果 | 详情 |
 |------|------|------|
+| T0 plugin.json 验证（宿主机）| ✅/❌ | <T0_OUT> |
 | T1 CC 可用性 | ✅/❌ | <T1_OUT> |
 | T2 Plan A install.sh | ✅/❌ | <T2_OUT> |
 | T2b Plan B plugin install | ✅/❌ | <T2B_OUT> |
@@ -647,11 +653,12 @@ rm -rf "$LOOPER_TMP"
 目标：plugin:<NAME>
 镜像：<IMAGE>（策略：<IMAGE_STRATEGY>）
 
-  T1  CC 可用性：          ✅ <version>
-  T2  Plan A install.sh：  ✅ A1–A7 all pass
-  T2b Plan B plugin install：✅ B1–B9 all pass
-  T3  触发测试：            ✅ 触发成功（<输出摘要>）
-  T5  eval suite：         ✅ <T5_RATE> passed  |  ⏭️ skipped (no evals.json)
+  T0  plugin.json 验证：    ✅ Validation passed
+  T1  CC 可用性：           ✅ <version>
+  T2  Plan A install.sh：   ✅ A1–A7 all pass
+  T2b Plan B plugin install：✅ B1–B8 all pass
+  T3  触发测试：             ✅ 触发成功（<输出摘要>）
+  T5  eval suite：          ✅ <T5_RATE> passed  |  ⏭️ skipped (no evals.json)
 
 报告：<REPORT_FILE>
 
@@ -659,7 +666,7 @@ rm -rf "$LOOPER_TMP"
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ```
 
-整体 PASS 条件：T1、T2、T2b、T3 全部 pass，且（T5 pass 或 T5 skip）。
+整体 PASS 条件：T0、T1、T2、T2b、T3 全部 pass，且（T5 pass 或 T5 skip）。
 
 **若 FAIL**，追加：
 
