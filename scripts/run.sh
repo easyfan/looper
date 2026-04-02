@@ -48,10 +48,10 @@ PLUGIN_PATH="$PROJECT_ROOT/packer/$NAME"
 EVALS_JSON="$PLUGIN_PATH/evals/evals.json"
 [[ -f "$EVALS_JSON" ]] || EVALS_JSON=""
 
-LOOPER_STATE="$PROJECT_ROOT/looper/.looper-state.json"
+LOOPER_STATE="$PLUGIN_ROOT/.looper-state.json"
 DEVCONTAINER="$PROJECT_ROOT/.devcontainer/devcontainer.json"
 CLAUDE_JSON_SRC="$HOME/.claude/looper/.claude.json"
-REPORT_DIR="$PROJECT_ROOT/looper/reports"
+REPORT_DIR="$PLUGIN_ROOT/reports"
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 log() { echo "$*" >&2; }
@@ -89,7 +89,7 @@ try:
 except: pass
 " 2>/dev/null || true)
   IMAGE="${_prev%% *}"
-  IMAGE_STRATEGY="cached (${_prev#* })"
+  IMAGE_STRATEGY="local-cached"
 fi
 
 if [[ -z "$IMAGE" ]]; then
@@ -140,7 +140,7 @@ mkdir -p "$CLEAN_CLAUDE"
 CONTAINER=""
 CONTAINER_B=""
 cleanup() {
-  docker rm -f "$CONTAINER" "$CONTAINER_B" 2>/dev/null || true
+  docker rm -f "$CONTAINER" ${CONTAINER_B:+"$CONTAINER_B"} > /dev/null 2>&1 || true
   rm -rf "${LOOPER_TMP:-}"
 }
 trap cleanup EXIT INT TERM
@@ -193,7 +193,7 @@ docker run -d \
   -v "${LOOPER_TMP}/.claude.json:/root/.claude.json" \
   -v "${LOOPER_TMP}:${WORK_DIR}" \
   -v "${PLUGIN_PATH}:/plugin_src:ro" \
-  "${PROXY_ENV_ARGS[@]}" \
+  ${PROXY_ENV_ARGS:+"${PROXY_ENV_ARGS[@]}"} \
   -e ANTHROPIC_API_KEY="$(python3 -c "import json; e=json.load(open('$HOME/.claude/settings.json')).get('env',{}); print(e.get('ANTHROPIC_API_KEY', e.get('ANTHROPIC_AUTH_TOKEN','')))" 2>/dev/null)" \
   -e ANTHROPIC_BASE_URL="$(python3 -c "import json; print(json.load(open('$HOME/.claude/settings.json')).get('env',{}).get('ANTHROPIC_BASE_URL',''))" 2>/dev/null)" \
   -e CLAUDE_CODE_MAX_OUTPUT_TOKENS="64000" \
@@ -295,7 +295,7 @@ docker run -d \
   -v "${PLAN_B_CLAUDE}:/root/.claude" \
   -v "${LOOPER_TMP}/.claude.json:/root/.claude.json" \
   -v "${PLUGIN_PATH}:/plugin_src:ro" \
-  "${PROXY_ENV_ARGS[@]}" \
+  ${PROXY_ENV_ARGS:+"${PROXY_ENV_ARGS[@]}"} \
   -e ANTHROPIC_API_KEY="$(python3 -c "import json; e=json.load(open('$HOME/.claude/settings.json')).get('env',{}); print(e.get('ANTHROPIC_API_KEY', e.get('ANTHROPIC_AUTH_TOKEN','')))" 2>/dev/null)" \
   -e ANTHROPIC_BASE_URL="$(python3 -c "import json; print(json.load(open('$HOME/.claude/settings.json')).get('env',{}).get('ANTHROPIC_BASE_URL',''))" 2>/dev/null)" \
   -e CLAUDE_CODE_MAX_OUTPUT_TOKENS="64000" \
@@ -379,7 +379,7 @@ for _p in $B1_PASS $B2_PASS $B3_PASS $B4_PASS $B5_PASS $B6_PASS $B7_PASS $B8_PAS
 done
 log "[T2b] $T2B_OUT → $T2B_PASS"
 
-docker rm -f "$CONTAINER_B" 2>/dev/null || true
+docker rm -f "$CONTAINER_B" > /dev/null 2>&1 || true
 CONTAINER_B=""
 
 fi # end Plan B container
@@ -430,7 +430,7 @@ if [[ "$HAS_EVALS" == "true" ]]; then
   T5_TMP="$LOOPER_TMP/t5_out_$$.txt"
   docker exec -w "$WORK_DIR" "$CONTAINER" \
     python3 /looper_work/run_eval_suite.py /looper_work/evals.json /looper_work \
-    2>&1 | tee "$T5_TMP" >&2
+    2>&1 | tee "$T5_TMP" >&2 || true
   T5_OUT=$(cat "$T5_TMP")
   rm -f "$T5_TMP"
 
@@ -493,26 +493,38 @@ MDEOF
 log "[looper] report: $REPORT_FILE"
 
 # ── JSON output (stdout) ──────────────────────────────────────────────────────
-python3 -c "
-import json, sys
+# Use env vars to pass text fields to python3, avoiding shell-quoting issues
+LOOPER_JSON_OUT=$(
+  PLUGIN="$NAME" OVERALL="$OVERALL" IMAGE="$IMAGE" \
+  IMAGE_STRATEGY="$IMAGE_STRATEGY" TIMESTAMP="$TIMESTAMP" REPORT_FILE="$REPORT_FILE" \
+  T0_PASS="$T0_PASS" T0_OUT="$T0_OUT" \
+  T1_PASS="$T1_PASS" T1_OUT="$T1_OUT" \
+  T2_PASS="$T2_PASS" T2_OUT="$T2_OUT" \
+  T2B_PASS="$T2B_PASS" T2B_OUT="$T2B_OUT" \
+  T3_PASS="$T3_PASS" T3_OUT="${T3_OUT:0:500}" \
+  T5_PASS="$T5_PASS" T5_RATE="$T5_RATE" \
+  python3 - << 'PYEOF'
+import json, os
 result = {
-  'plugin': '$NAME',
-  'overall': '$OVERALL',
-  'image': '$IMAGE',
-  'image_strategy': '$IMAGE_STRATEGY',
-  'timestamp': '$TIMESTAMP',
-  'report_file': '$REPORT_FILE',
-  'tests': {
-    'T0': {'pass': '$T0_PASS', 'detail': '''${T0_OUT//\'/}'''},
-    'T1': {'pass': '$T1_PASS', 'detail': '''${T1_OUT//\'/}'''},
-    'T2': {'pass': '$T2_PASS', 'detail': '$T2_OUT'},
-    'T2b': {'pass': '$T2B_PASS', 'detail': '$T2B_OUT'},
-    'T3': {'pass': '$T3_PASS', 'output_snippet': '''${T3_OUT:0:500}'''.replace(chr(39),'')},
-    'T5': {'pass': '$T5_PASS', 'rate': '$T5_RATE'}
+  "plugin":         os.environ["PLUGIN"],
+  "overall":        os.environ["OVERALL"],
+  "image":          os.environ["IMAGE"],
+  "image_strategy": os.environ["IMAGE_STRATEGY"],
+  "timestamp":      os.environ["TIMESTAMP"],
+  "report_file":    os.environ["REPORT_FILE"],
+  "tests": {
+    "T0":  {"pass": os.environ["T0_PASS"],  "detail":         os.environ["T0_OUT"]},
+    "T1":  {"pass": os.environ["T1_PASS"],  "detail":         os.environ["T1_OUT"]},
+    "T2":  {"pass": os.environ["T2_PASS"],  "detail":         os.environ["T2_OUT"]},
+    "T2b": {"pass": os.environ["T2B_PASS"], "detail":         os.environ["T2B_OUT"]},
+    "T3":  {"pass": os.environ["T3_PASS"],  "output_snippet": os.environ["T3_OUT"]},
+    "T5":  {"pass": os.environ["T5_PASS"],  "rate":           os.environ["T5_RATE"]},
   }
 }
 print(json.dumps(result, indent=2, ensure_ascii=False))
-"
+PYEOF
+)
+echo "$LOOPER_JSON_OUT"
 
 [[ "$OVERALL" == "pass" ]] && exit 0 || exit 1
 
