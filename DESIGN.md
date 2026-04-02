@@ -30,7 +30,24 @@ plugin 有两条交付路径，looper 对两者都需要验证：
 ## 2. Plan A — install.sh 路径
 
 **测试对象**：`bash install.sh` 的安装脚本行为  
-**容器内执行，通过 `CLAUDE_DIR=$CLEAN_CLAUDE` 指定安装目标**
+**容器内执行**：plugin 源文件以只读 volume 挂载到 `/plugin_src`，通过 `docker exec` 运行 install.sh
+
+```bash
+# docker run 额外参数
+-v $PLUGIN_PATH:/plugin_src:ro
+
+# 容器内执行
+CLAUDE_DIR=/root/.claude bash /plugin_src/install.sh [--dry-run|--uninstall]
+```
+
+### 为何选择容器内执行（而非宿主机执行）
+
+looper 的使用者是 plugin 的开发者——而开发者同时也是 plugin 的深度用户，其 `~/.claude/` 
+里装着日常依赖的工具。若在宿主机上反复执行 install/uninstall，每次跑测试都在破坏自己的
+工作台：已安装的 skills/commands/agents 会被卸载，再装回来时状态未必一致。
+
+容器隔离不只是工程上的"更纯粹"，而是对使用这个工具的开发者的基本尊重：
+测试环境和开发环境彼此独立，自动化测试可以放心地高频运行。
 
 | 步骤 | 操作 | 断言 |
 |------|------|------|
