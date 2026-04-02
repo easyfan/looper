@@ -189,7 +189,7 @@ CLAUDE_JSON_SRC="$HOME/.claude/looper/.claude.json"
 ```bash
 LOOPER_TMP=$(mktemp -d "${HOME}/looper_XXXXXX")
 CLEAN_CLAUDE="$LOOPER_TMP/claude_home"
-mkdir -p "$CLEAN_CLAUDE/commands"
+mkdir -p "$CLEAN_CLAUDE"
 
 # 注册 trap：确保容器和临时目录在任意退出路径（含 SIGINT/SIGTERM）下均被清理
 # CONTAINER 在 Step 5 赋值，此处引用时 trap 动态展开变量，先声明为空以防万一
@@ -211,23 +211,6 @@ if [ ! -f "$CLAUDE_JSON_SRC" ]; then
 fi
 cp "$CLAUDE_JSON_SRC" "$LOOPER_TMP/.claude.json"
 
-# 执行 packer 的 install.sh，通过 CLAUDE_DIR 环境变量指定安装目标
-# （packer install.sh 约定：CLAUDE_DIR=/path ./install.sh，不使用 --target flag）
-INSTALL_OUT=$(CLAUDE_DIR="$CLEAN_CLAUDE" bash "${PLUGIN_PATH}/install.sh" 2>&1)
-INSTALL_RC=$?
-if [ $INSTALL_RC -ne 0 ]; then
-  echo "  ❌ install.sh 执行失败（exit $INSTALL_RC）："
-  echo "$INSTALL_OUT" | tail -10
-  # 写入最简失败报告（保持所有失败路径均有持久记录）
-  _FAIL_REPORT_DIR="$(pwd)/looper/reports"
-  mkdir -p "$_FAIL_REPORT_DIR"
-  _FAIL_REPORT="${_FAIL_REPORT_DIR}/$(date +%Y%m%d_%H%M%S)_looper_${NAME}.md"
-  printf '# Looper 报告：%s\n日期：%s\n\n## 结果\nFAIL — install.sh 退出码 %s\n\n## 错误输出（最后 10 行）\n```\n%s\n```\n' \
-    "$NAME" "$(date)" "$INSTALL_RC" "$(echo "$INSTALL_OUT" | tail -10)" > "$_FAIL_REPORT"
-  echo "  报告：$_FAIL_REPORT"
-  exit 1  # EXIT trap 统一清理 LOOPER_TMP（容器尚未启动，docker rm 静默跳过）
-fi
-echo "  已执行安装：packer/${NAME}/install.sh → $CLEAN_CLAUDE"
 ```
 
 ```bash
@@ -316,6 +299,7 @@ fi
   镜像策略：<IMAGE_STRATEGY>
   纯净 CC 目录：<LOOPER_TMP>
   目标：plugin:<NAME>
+  plugin 源文件：只读挂载 <PLUGIN_PATH> → /plugin_src
   settings.json：只读挂载（API 凭证 + 模型配置，不落盘到临时目录）
   eval suite：<N 条用例已注入 / skipped>
 ```
@@ -336,6 +320,7 @@ docker run -d \
   -v "$HOME/.claude/settings.json:/root/.claude/settings.json:ro" \
   -v "${LOOPER_TMP}/.claude.json:/root/.claude.json" \
   -v "${LOOPER_TMP}:${WORK_DIR}" \
+  -v "${PLUGIN_PATH}:/plugin_src:ro" \
   "${PROXY_ENV_ARGS[@]}" \
   -e CLAUDE_CODE_MAX_OUTPUT_TOKENS="64000" \
   -e IS_SANDBOX=1 \
@@ -365,25 +350,56 @@ T1_OUT=$(docker exec "$CONTAINER" claude --version 2>&1)
 T1_PASS=$(echo "$T1_OUT" | grep -qi "claude" && echo "pass" || echo "fail")
 ```
 
-### Test 2：安装完整性检查
+### Test 2 (Plan A)：install.sh 路径完整验证 — A1–A7
 
 ```bash
-# plugin：有意义的完整性验证：检查除 settings.json 以外是否存在安装物
-# -type f 确保只检测实际文件，排除空目录结构
-T2_TMPFILE=$(mktemp "$LOOPER_TMP/t2_XXXXXX")
-if docker exec "$CONTAINER" find /root/.claude/ -mindepth 1 -type f -not -name "settings.json" > "$T2_TMPFILE" 2>&1; then
-  T2_OUT=$(head -5 "$T2_TMPFILE")
-  rm -f "$T2_TMPFILE"
-  if [ -n "$T2_OUT" ]; then
-    T2_PASS="pass"
-  else
-    T2_PASS="fail"
-  fi
-else
-  T2_OUT="docker exec 失败：$(cat "$T2_TMPFILE")"
-  rm -f "$T2_TMPFILE"
-  T2_PASS="fail"
-fi
+# A1: dry-run — 输出 N file(s) would be modified，无实际写入
+A1_OUT=$(docker exec "$CONTAINER" bash -c "CLAUDE_DIR=/root/.claude bash /plugin_src/install.sh --dry-run 2>&1")
+A1_COUNT=$(echo "$A1_OUT" | grep -oE '[0-9]+ file' | grep -oE '[0-9]+' || echo "0")
+echo "$A1_OUT" | grep -q "would be modified" && [[ "$A1_COUNT" -gt 0 ]] \
+  && A1_PASS="pass" || A1_PASS="fail"
+
+# A2: uninstall on empty env — 优雅处理 not found，exit 0
+A2_OUT=$(docker exec "$CONTAINER" bash -c "CLAUDE_DIR=/root/.claude bash /plugin_src/install.sh --uninstall; echo \"EXIT:\$?\"" 2>&1)
+echo "$A2_OUT" | grep -q "EXIT:0" && A2_PASS="pass" || A2_PASS="fail"
+
+# A3: fresh install — Done! N file(s)/item(s) installed，exit 0
+A3_OUT=$(docker exec "$CONTAINER" bash -c "CLAUDE_DIR=/root/.claude bash /plugin_src/install.sh 2>&1")
+A3_COUNT=$(echo "$A3_OUT" | grep -oE 'Done! [0-9]+' | grep -oE '[0-9]+' || echo "0")
+echo "$A3_OUT" | grep -q "Done!" && [[ "$A3_COUNT" -gt 0 ]] \
+  && A3_PASS="pass" || A3_PASS="fail"
+
+# A4: idempotency — re-install = Done! 0
+A4_OUT=$(docker exec "$CONTAINER" bash -c "CLAUDE_DIR=/root/.claude bash /plugin_src/install.sh 2>&1")
+echo "$A4_OUT" | grep -qE "Done! 0 (file|item)" \
+  && A4_PASS="pass" || A4_PASS="fail"
+
+# A5: file presence — commands/agents/skills 各有安装物
+A5_OUT=$(docker exec "$CONTAINER" bash -c "
+  find /root/.claude/commands /root/.claude/agents /root/.claude/skills \
+    -mindepth 1 \( -type f -o -type d \) 2>/dev/null | head -20
+")
+[[ -n "$A5_OUT" ]] && A5_PASS="pass" || A5_PASS="fail"
+
+# A6: uninstall — Removed N item(s)
+A6_OUT=$(docker exec "$CONTAINER" bash -c "CLAUDE_DIR=/root/.claude bash /plugin_src/install.sh --uninstall 2>&1")
+A6_REMOVED=$(echo "$A6_OUT" | grep -c "Removed" || true)
+[[ "$A6_REMOVED" -gt 0 ]] && A6_PASS="pass" || A6_PASS="fail"
+
+# A7: verify clean — 安装物全部消失
+A7_OUT=$(docker exec "$CONTAINER" bash -c "
+  find /root/.claude/commands /root/.claude/agents /root/.claude/skills \
+    -mindepth 1 2>/dev/null | head -5
+")
+[[ -z "$A7_OUT" ]] && A7_PASS="pass" || A7_PASS="fail"
+
+# 汇总 T2：全部 pass 才算过
+T2_OUT="A1:${A1_PASS} A2:${A2_PASS} A3:${A3_PASS} A4:${A4_PASS} A5:${A5_PASS} A6:${A6_PASS} A7:${A7_PASS}"
+T2_PASS="pass"
+for _p in $A1_PASS $A2_PASS $A3_PASS $A4_PASS $A5_PASS $A6_PASS $A7_PASS; do
+  [[ "$_p" != "pass" ]] && T2_PASS="fail"
+done
+echo "  [T2] $T2_OUT"
 ```
 
 ### Test 3：触发测试（核心）
@@ -542,10 +558,17 @@ rm -rf "$LOOPER_TMP"
 
 ```
 容器 /root/
-├── .claude/                  ← 纯净 CC home（仅含被测目标）
-│   ├── settings.json         ← API 凭证 + model（只读 volume 挂载自宿主机原位）
-│   └── <install.sh 安装物>   ← commands/, skills/, agents/ 等
+├── .claude/                  ← 纯净 CC home（Plan A 步骤通过 install.sh 写入）
+│   ├── settings.json         ← API 凭证 + model（只读 volume 挂载）
+│   ├── commands/             ← Plan A A3 安装后写入
+│   ├── agents/               ← Plan A A3 安装后写入
+│   └── skills/               ← Plan A A3 安装后写入
 └── .claude.json              ← {"hasCompletedOnboarding":true}
+
+/plugin_src/                  ← 被测 plugin 源文件（只读 volume 挂载自宿主机 PLUGIN_PATH）
+├── install.sh
+├── .claude-plugin/
+└── <plugin 内容>
 
 /looper_work/                 ← LOOPER_TMP 挂载点
 ├── run_eval_suite.py         ← T5 eval runner（注入，若 evals.json 存在）
