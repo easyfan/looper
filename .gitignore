@@ -1,1 +1,8 @@
 assets/image/.git/
+
+# local runtime state and test reports (contain host absolute paths)
+.looper-state.json
+reports/
+
+# skill-review working files and session artifacts
+.claude/
