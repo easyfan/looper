@@ -1,5 +1,100 @@
 {
   "skill_name": "looper",
   "disable_t5": true,
-  "evals": []
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "/looper --help",
+      "expected_output": "输出完整用法说明，含 --plugin / --image / --plan / --help 四个参数说明和每个参数的描述，不执行任何 Docker 操作，干净退出。",
+      "files": [],
+      "assertions": [
+        "输出含 '--plugin <name>'",
+        "输出含 '--image <image>'",
+        "输出含 '--plan'",
+        "输出含 '--help'",
+        "输出含至少一个使用示例",
+        "未执行任何 docker 命令"
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "/looper",
+      "expected_output": "无参数时输出用法说明（与 --help 相同），不执行任何 Docker 操作，干净退出。",
+      "files": [],
+      "assertions": [
+        "输出含 '--plugin' 说明",
+        "输出含用法示例",
+        "未执行任何 docker 命令"
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "/looper --plugin xyz_nonexistent_looper_test_abc",
+      "expected_output": "解析出 NAME=xyz_nonexistent_looper_test_abc，发现 packer/xyz_nonexistent_looper_test_abc 目录不存在，输出错误提示并退出；不尝试启动容器。",
+      "files": [],
+      "assertions": [
+        "输出含插件目录不存在的错误提示",
+        "输出含 xyz_nonexistent_looper_test_abc",
+        "未执行任何 docker run / docker exec 命令",
+        "整体执行不崩溃，有明确退出提示"
+      ]
+    },
+    {
+      "id": 4,
+      "prompt": "/looper --plugin looper --plan a",
+      "expected_output": "解析出 NAME=looper PLAN=a；检查 Docker 可用性；若 Docker 可用则仅运行 Plan A（T2 A1-A7），跳过 T2b（Plan B）；结果 JSON 中 T2b.pass 为 skip。",
+      "files": [],
+      "assertions": [
+        "解析参数：PLAN=a",
+        "检查了 Docker 可用性",
+        "若 Docker 可用，输出含 T2 测试条目",
+        "若 Docker 可用，T2b 结果为 skip 而非 fail",
+        "整体执行不崩溃"
+      ]
+    },
+    {
+      "id": 5,
+      "prompt": "/looper --plugin looper --plan b",
+      "expected_output": "解析出 NAME=looper PLAN=b；检查 Docker 可用性；若 Docker 可用则仅运行 Plan B（T2b B1-B8），跳过 T2（Plan A）；结果 JSON 中 T2.pass 为 skip。",
+      "files": [],
+      "assertions": [
+        "解析参数：PLAN=b",
+        "检查了 Docker 可用性",
+        "若 Docker 可用，输出含 T2b 测试条目",
+        "若 Docker 可用，T2（Plan A）结果为 skip 而非 fail",
+        "整体执行不崩溃"
+      ]
+    },
+    {
+      "id": 6,
+      "prompt": "/looper --plugin looper --image my-custom-registry:cc-runtime",
+      "expected_output": "解析出 NAME=looper USER_IMAGE=my-custom-registry:cc-runtime；IMAGE_STRATEGY 为 user-specified；输出中出现该镜像名；检查 Docker 可用性后按常规流程执行或优雅退出。",
+      "files": [],
+      "assertions": [
+        "解析出 --image 参数：my-custom-registry:cc-runtime",
+        "输出或行动中体现镜像策略为 user-specified",
+        "输出中出现 my-custom-registry:cc-runtime",
+        "检查了 Docker 可用性",
+        "整体执行不崩溃"
+      ]
+    },
+    {
+      "id": 7,
+      "prompt": "/looper --plugin looper",
+      "expected_output": "发现 .looper-state.json 已存在（含 cached-image:v1），直接沿用缓存镜像；IMAGE_STRATEGY 为 local-cached；输出中出现 cached-image:v1；检查 Docker 可用性后按常规流程执行或优雅退出。",
+      "files": [
+        {
+          "path": "packer/looper/.looper-state.json",
+          "content": "{\"image\": \"cached-image:v1\", \"strategy\": \"local-cached\", \"timestamp\": \"2026-03-25T00:00:00Z\"}"
+        }
+      ],
+      "assertions": [
+        "读取了 .looper-state.json",
+        "输出中体现镜像策略为 local-cached 或含 'cached'",
+        "所用镜像为 cached-image:v1（状态文件中的值，而非重新检测的结果）",
+        "检查了 Docker 可用性",
+        "整体执行不崩溃"
+      ]
+    }
+  ]
 }
