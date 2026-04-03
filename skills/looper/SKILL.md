@@ -12,6 +12,25 @@ All test logic lives in the shell script — this skill only handles invocation 
 
 ## Invocation
 
+**Step 1 — help/no-args check (no path computation needed):**
+
+If `$ARGUMENTS` is empty or contains `--help`, print the following and exit immediately without computing any path or invoking `run.sh`. This check must happen before any other processing — even before computing `$LOOPER_SCRIPT`.
+
+  Usage: /looper --plugin <name> [--image <image>] [--plan a|b|both] [--help]
+
+  Options:
+    --plugin <name>    Plugin directory name under packer/ (required)
+    --image  <image>   Docker image to use (default: cc-runtime-minimal)
+    --plan   a|b|both  Test plan: a=Plan A only, b=Plan B only, both=all tests (default: both)
+    --help             Show this help and exit
+
+  Examples:
+    /looper --plugin news-digest
+    /looper --plugin news-digest --plan a
+    /looper --plugin news-digest --image cc-runtime-minimal
+
+**Step 2 — resolve script path (only reached when a real invocation is needed):**
+
 ```bash
 # $SKILL_FILE is injected by the CC plugin harness at invocation time (CC context only —
 # private implementation variable, not a standard POSIX or CC public API).
@@ -20,14 +39,7 @@ All test logic lives in the shell script — this skill only handles invocation 
 LOOPER_SCRIPT="$(dirname "$(dirname "$(dirname "$SKILL_FILE")")")/scripts/run.sh"
 ```
 
-If `$ARGUMENTS` is empty or contains `--help`, print the following and exit without invoking `run.sh`:
-  Usage: /looper --plugin <name> [--image <image>] [--plan a|b|both] [--help]
-
-  Options:
-    --plugin <name>    Plugin directory name under packer/ (required)
-    --image  <image>   Docker image to use (default: cc-runtime-minimal)
-    --plan   a|b|both  Test plan: a=Plan A only, b=Plan B only, both=all tests (default: both)
-    --help             Show this help and exit
+**Step 3 — invoke:**
 
 Parse `$ARGUMENTS` for `--plugin`, `--image`, `--plan` flags and pass directly to `run.sh`.
 Safety note: `$ARGUMENTS` is passed unquoted to allow flag splitting by the shell. Ensure argument values do not contain spaces and do not contain shell metacharacters (`;`, `|`, `` ` ``, `$(...)`). Plugin names and image names are plain tokens; they should never need quoting. If any argument value originates from user input, parse flags explicitly into named variables before passing (e.g. `bash "$LOOPER_SCRIPT" --plugin "$PLUGIN" --plan "$PLAN"`).

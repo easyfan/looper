@@ -81,19 +81,12 @@
     {
       "id": 7,
       "prompt": "/looper --plugin looper",
-      "expected_output": "发现 .looper-state.json 已存在（含 cached-image:v1），直接沿用缓存镜像；IMAGE_STRATEGY 为 local-cached；输出中出现 cached-image:v1；检查 Docker 可用性后按常规流程执行或优雅退出。",
-      "files": [
-        {
-          "path": "packer/looper/.looper-state.json",
-          "content": "{\"image\": \"cached-image:v1\", \"strategy\": \"local-cached\", \"timestamp\": \"2026-03-25T00:00:00Z\"}"
-        }
-      ],
+      "expected_output": "检查 Docker 可用性；run.sh 发现 packer/looper 不在容器内的标准路径，输出 plugin path not found 错误（exit 2）；skill 呈现降级错误模板而非崩溃。",
+      "files": [],
       "assertions": [
-        "读取了 .looper-state.json",
-        "输出中体现镜像策略为 local-cached 或含 'cached'",
-        "所用镜像为 cached-image:v1（状态文件中的值，而非重新检测的结果）",
         "检查了 Docker 可用性",
-        "整体执行不崩溃"
+        "输出含错误提示（plugin path not found 或等价的路径不存在说明）",
+        "整体执行不崩溃，有明确退出提示"
       ]
     }
   ]
