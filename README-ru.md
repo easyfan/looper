@@ -1,30 +1,35 @@
 # looper
 
-Верификация при развёртывании для commands, skills и plugins Claude Code — выполняет тесты
-установки, точности триггеров и поведенческий набор оценок (T5) в чистом Docker CC-контейнере.
+Верификация при развёртывании для плагинов Claude Code — выполняет тесты установки,
+точности триггеров и поведенческий набор оценок (T5) в чистом Docker CC-контейнере.
 Используется как этап 5 конвейера skill-test.
 
 ## Установка
 
 ```bash
 bash install.sh
-# или указать пользовательский каталог конфигурации Claude
-bash install.sh --target ~/.claude
-# или использовать соглашение CLAUDE_DIR
+# Предварительный просмотр без записи файлов
+bash install.sh --dry-run
+# Удалить установленные файлы
+bash install.sh --uninstall
+# Пользовательский каталог конфигурации Claude (флаг или переменная окружения)
+bash install.sh --target=~/.claude
 CLAUDE_DIR=~/.claude bash install.sh
 ```
 
 Устанавливает:
-- `commands/looper.md → ~/.claude/commands/looper.md`
-- `assets/config/.claude.json → ~/.claude/looper/.claude.json`
+- `skills/looper/ → ~/.claude/skills/looper/`
 
 > ✅ **Проверено**: покрыто конвейером skill-test (looper Stage 5).
 
 ## Использование
 
 ```
-/looper --plugin <pkg>                    # установить и проверить packer/<pkg>/
-/looper --plugin <pkg> --image <image>   # использовать явно указанный образ контейнера
+/looper --plugin <name>                          # верифицировать packer/<name>/
+/looper --plugin <name> --plan a                 # только план A (путь install.sh)
+/looper --plugin <name> --plan b                 # только план B (путь claude plugin install)
+/looper --plugin <name> --image <image>          # использовать явно указанный образ контейнера
+/looper --help                                   # показать справку
 ```
 
 ## Требования
@@ -35,7 +40,7 @@ CLAUDE_DIR=~/.claude bash install.sh
 ## Стратегия выбора образа
 
 looper определяет образ контейнера в следующем порядке приоритетов (результат сохраняется
-в `looper/.looper-state.json` после первого вызова и используется повторно):
+в `packer/<name>/.looper-state.json` после первого вызова и используется повторно):
 
 | Приоритет | Источник | Примечания |
 |-----------|----------|------------|
@@ -60,24 +65,40 @@ docker build -t cc-runtime-minimal assets/image/
 
 Исходный код образа: [easyfan/agents-slim](https://github.com/easyfan/agents-slim)
 
+## Тестовые планы
+
+looper выполняет два независимых плана верификации. Используйте `--plan both` (по умолчанию)
+для запуска всех тестов, или `--plan a` / `--plan b` для одного плана.
+
+| План | Шаги | Что проверяется |
+|------|------|-----------------|
+| A | T2 (A1–A7) | Соответствие интерфейса `install.sh`, установка файлов, идемпотентность, удаление, dry-run |
+| B | T2b (B1–B8) | Путь `claude plugin install` (marketplace / локальный `plugin.json`) |
+
+Эти тесты выполняются всегда независимо от значения `--plan`:
+
+| Тест | Что проверяется |
+|------|-----------------|
+| T0 | Валидация манифеста `plugin.json` (хост, однократно) |
+| T1 | Доступность CC в контейнере |
+| T3 | Точность срабатывания skill (один вызов `claude -p`) |
+| T5 | Поведенческий набор оценок (выполняет `evals/evals.json` в контейнере; пропускается при `disable_t5: true`) |
+
 ## Разработка
 
 ### Evals
 
-`evals/evals.json` содержит 10 тесткейсов, охватывающих разбор аргументов, разрешение целей,
-обнаружение доступности Docker, ветки стратегии образа и выполнение T5:
+`evals/evals.json` содержит 7 тест-кейсов для текущего CLI с единственным флагом `--plugin`:
 
 | ID | Сценарий | Что проверяется |
 |----|----------|-----------------|
-| 1 | `/looper --plugin patterns` | Разбор аргументов, существование целевого пути, доступность Docker; graceful exit при отсутствии Docker; T5 запускается при наличии Docker (evals.json присутствует) |
-| 2 | `/looper --plugin xyz_nonexistent_...` | Выводит "❌ target not found" при отсутствии `packer/<pkg>`; контейнер не запускается |
-| 3 | `/looper --plugin patterns` (полный поток) | Находит `packer/patterns/`, запускает `install.sh`, строит чистую среду, выполняет T1–T3 |
-| 4 | `/looper` (без аргументов) | Выводит руководство по использованию; Docker-операции не выполняются |
-| 5 | `/looper --plugin patterns --image my-custom-registry:cc-runtime` | Флаг `--image` устанавливает стратегию user-specified (приоритет 1), пропускает обнаружение devcontainer и кэш |
-| 6 | То же (с существующим `.looper-state.json`) | Читает кэшированный файл состояния, использует записанный образ без повторного обнаружения |
-| 7 | Проверка вывода стратегии образа | Вывод содержит имя образа и метку стратегии (devcontainer / user-specified / fallback / cached) |
-| 8 | T5 активен — `/looper --plugin patterns` (evals.json присутствует) | Step 4 внедряет eval runner + evals.json; при наличии Docker T5 выполняется и выводит EVAL_SUITE_RESULT |
-| 9 | T5 пропущен — `disable_t5: true` в evals.json | Step 4 выводит "eval suite: skipped (disable_t5=true)"; строка T5 показывает ⏭️; общий результат не провальный |
+| 1 | `/looper --help` | Справочный текст содержит все четыре флага и хотя бы один пример использования; Docker не запускается |
+| 2 | `/looper` (без аргументов) | Выводит руководство по использованию; Docker-операции не выполняются |
+| 3 | `/looper --plugin xyz_nonexistent_...` | Выводит ошибку «плагин не найден»; контейнер не запускается |
+| 4 | `/looper --plugin looper --plan a` | Только план A; результат T2b — skip |
+| 5 | `/looper --plugin looper --plan b` | Только план B; результат T2 — skip |
+| 6 | `/looper --plugin looper --image my-custom-registry:cc-runtime` | Флаг `--image`; стратегия user-specified; имя образа присутствует в выводе |
+| 7 | `/looper --plugin looper` | Плагин не найден в контейнере; корректный вывод ошибки |
 
 ### Отключение T5
 
@@ -96,30 +117,25 @@ docker build -t cc-runtime-minimal assets/image/
 Step 4 выведет `eval suite: skipped (disable_t5=true in evals.json)`. Общий результат
 не помечается как FAIL.
 
-Ручное тестирование (в сессии Claude Code):
-```bash
-/looper --plugin patterns     # eval 1
-/looper                       # eval 4 — просмотр руководства
-```
-
-Запуск всех evals через eval loop skill-creator (если установлен):
-```bash
-python ~/.claude/skills/skill-creator/scripts/run_loop.py \
-  --skill-path ~/.claude/commands/looper.md \
-  --evals-path evals/evals.json
-```
-
 ## Структура пакета
 
 ```
 looper/
-├── commands/looper.md          # устанавливается в ~/.claude/commands/
-├── assets/
-│   ├── config/.claude.json     # устанавливается в ~/.claude/looper/
-│   └── image/                  # исходный код образа cc-runtime-minimal
-│       ├── Dockerfile
-│       └── .github/workflows/build-push.yml
+├── .claude-plugin/
+│   └── plugin.json             # манифест плагина
+├── skills/looper/
+│   └── SKILL.md                # устанавливается в ~/.claude/skills/looper/
+├── scripts/
+│   ├── run.sh                  # основная логика верификации
+│   └── run_eval_suite.py       # T5 eval runner (внедряется в контейнер)
+├── assets/image/               # исходный код образа cc-runtime-minimal
+│   ├── Dockerfile
+│   └── .github/workflows/build-push.yml
+├── test/
+│   ├── test-a.sh               # хост-тесты плана A
+│   ├── test-b.sh               # хост-тесты плана B
+│   └── test-all.sh
 ├── evals/evals.json
 ├── install.sh
-└── SKILL.md
+└── package.json
 ```

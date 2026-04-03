@@ -1,30 +1,35 @@
 # looper
 
-Deploy-time verification for Claude Code commands, skills, and plugins — runs installation,
-trigger-accuracy, and behavioral eval suite (T5) tests inside a clean Docker CC container.
+Deploy-time verification for Claude Code plugins — runs installation integrity,
+trigger accuracy, and behavioral eval suite (T5) tests inside a clean Docker CC container.
 Used as Stage 5 of the skill-test pipeline.
 
 ## Install
 
 ```bash
 bash install.sh
-# or specify a custom Claude config directory
-bash install.sh --target ~/.claude
-# or using the CLAUDE_DIR convention
+# preview without writing
+bash install.sh --dry-run
+# remove installed files
+bash install.sh --uninstall
+# custom Claude config directory (flag or env var)
+bash install.sh --target=~/.claude
 CLAUDE_DIR=~/.claude bash install.sh
 ```
 
 Installs:
-- `commands/looper.md → ~/.claude/commands/looper.md`
-- `assets/config/.claude.json → ~/.claude/looper/.claude.json`
+- `skills/looper/ → ~/.claude/skills/looper/`
 
 > ✅ **Verified**: covered by the skill-test pipeline (looper Stage 5).
 
 ## Usage
 
 ```
-/looper --plugin <pkg>                    # install and verify packer/<pkg>/
-/looper --plugin <pkg> --image <image>   # use an explicit container image
+/looper --plugin <name>                          # verify packer/<name>/
+/looper --plugin <name> --plan a                 # Plan A only (install.sh path)
+/looper --plugin <name> --plan b                 # Plan B only (claude plugin install path)
+/looper --plugin <name> --image <image>          # explicit container image
+/looper --help                                   # show usage
 ```
 
 ## Requirements
@@ -35,7 +40,7 @@ Installs:
 ## Image Strategy
 
 looper resolves the container image using the following priority order (result is persisted
-to `looper/.looper-state.json` after the first run):
+to `packer/<name>/.looper-state.json` after the first run):
 
 | Priority | Source | Notes |
 |----------|--------|-------|
@@ -60,24 +65,40 @@ docker build -t cc-runtime-minimal assets/image/
 
 Image source: [easyfan/agents-slim](https://github.com/easyfan/agents-slim)
 
+## Test Plans
+
+looper runs two independent verification plans. Use `--plan both` (default) to run all tests,
+or `--plan a` / `--plan b` to run one plan at a time.
+
+| Plan | Steps | What is verified |
+|------|-------|-----------------|
+| A | T2 (A1–A7) | `install.sh` interface compliance, file installation, idempotency, uninstall, dry-run |
+| B | T2b (B1–B8) | `claude plugin install` path (marketplace / local `plugin.json`) |
+
+Additional tests always run regardless of `--plan`:
+
+| Test | What is verified |
+|------|-----------------|
+| T0 | `plugin.json` manifest validation (host, once) |
+| T1 | CC availability inside container |
+| T3 | Skill trigger accuracy (single `claude -p` call) |
+| T5 | Behavioral eval suite (runs `evals/evals.json` inside container; skipped when `disable_t5: true`) |
+
 ## Development
 
 ### Evals
 
-`evals/evals.json` contains 10 test cases covering argument parsing, target resolution,
-Docker availability detection, image strategy branches, and T5 eval suite execution:
+`evals/evals.json` contains 7 test cases covering the current `--plugin`-only CLI:
 
 | ID | Scenario | What is verified |
 |----|----------|-----------------|
-| 1 | `/looper --plugin patterns` | Argument parsing, target path existence, Docker availability; graceful exit when Docker unavailable; T5 triggered when Docker available (evals.json present) |
-| 2 | `/looper --plugin xyz_nonexistent_...` | Outputs "❌ target not found" when `packer/<pkg>` is missing; no container started |
-| 3 | `/looper --plugin patterns` (full flow) | Locates `packer/patterns/`, runs `install.sh`, builds clean env, runs T1–T3 |
-| 4 | `/looper` (no args) | Outputs usage guide; no Docker operations |
-| 5 | `/looper --plugin patterns --image my-custom-registry:cc-runtime` | `--image` flag sets user-specified strategy (priority 1), skips devcontainer detection and cache |
-| 6 | Same as above (with pre-existing `.looper-state.json`) | Reads cached state file, reuses recorded image without re-detecting |
-| 7 | Image strategy output verification | Execution output contains image name and strategy label (devcontainer / user-specified / fallback / cached) |
-| 8 | T5 active — `/looper --plugin patterns` (evals.json present) | Step 4 injects eval runner + evals.json; if Docker available, T5 runs and outputs EVAL_SUITE_RESULT |
-| 9 | T5 skip — `disable_t5: true` in evals.json | Step 4 notes "eval suite: skipped (disable_t5=true)"; T5 row shows ⏭️; overall result not failed |
+| 1 | `/looper --help` | Help text contains all four flags and at least one usage example; no Docker executed |
+| 2 | `/looper` (no args) | Outputs usage guide; no Docker operations |
+| 3 | `/looper --plugin xyz_nonexistent_...` | Outputs plugin-not-found error; no container started |
+| 4 | `/looper --plugin looper --plan a` | Plan A only; T2b result is skip |
+| 5 | `/looper --plugin looper --plan b` | Plan B only; T2 result is skip |
+| 6 | `/looper --plugin looper --image my-custom-registry:cc-runtime` | `--image` flag; user-specified strategy; image name appears in output |
+| 7 | `/looper --plugin looper` | Plugin not found in container; graceful error output |
 
 ### Opting out of T5
 
@@ -97,30 +118,25 @@ run inside the clean environment.
 looper will note `eval suite: skipped (disable_t5=true in evals.json)` in the Step 4 progress
 output. The overall result is not failed.
 
-Manual testing (in a Claude Code session):
-```bash
-/looper --plugin patterns     # eval 1
-/looper                       # eval 4 — view usage guide
-```
-
-Run all evals using skill-creator's eval loop (if installed):
-```bash
-python ~/.claude/skills/skill-creator/scripts/run_loop.py \
-  --skill-path ~/.claude/commands/looper.md \
-  --evals-path evals/evals.json
-```
-
 ## Package Structure
 
 ```
 looper/
-├── commands/looper.md          # installed to ~/.claude/commands/
-├── assets/
-│   ├── config/.claude.json     # installed to ~/.claude/looper/
-│   └── image/                  # cc-runtime-minimal image source
-│       ├── Dockerfile
-│       └── .github/workflows/build-push.yml
+├── .claude-plugin/
+│   └── plugin.json             # plugin manifest
+├── skills/looper/
+│   └── SKILL.md                # installed to ~/.claude/skills/looper/
+├── scripts/
+│   ├── run.sh                  # core verification logic
+│   └── run_eval_suite.py       # T5 eval runner (injected into container)
+├── assets/image/               # cc-runtime-minimal image source
+│   ├── Dockerfile
+│   └── .github/workflows/build-push.yml
+├── test/
+│   ├── test-a.sh               # Plan A host-level tests
+│   ├── test-b.sh               # Plan B host-level tests
+│   └── test-all.sh
 ├── evals/evals.json
 ├── install.sh
-└── SKILL.md
+└── package.json
 ```

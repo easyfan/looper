@@ -1,28 +1,33 @@
 # looper
 
-在纯净 Docker CC 容器中对 command/skill/plugin 执行部署验证测试（安装完整性 + 触发准确性 + eval suite 行为验证 T5）。是 skill-test pipeline 的阶段 5 工具。
+在纯净 Docker CC 容器中对 Claude Code 插件执行部署验证测试（安装完整性 + 触发准确性 + eval suite 行为验证 T5）。是 skill-test pipeline 的阶段 5 工具。
 
 ## 安装
 
 ```bash
 bash install.sh
-# 或指定 claude 目录
-bash install.sh --target ~/.claude
-# 或使用 CLAUDE_DIR 约定
+# 预览，不实际写入
+bash install.sh --dry-run
+# 卸载
+bash install.sh --uninstall
+# 指定 Claude 配置目录（参数或环境变量均可）
+bash install.sh --target=~/.claude
 CLAUDE_DIR=~/.claude bash install.sh
 ```
 
 安装内容：
-- `commands/looper.md → ~/.claude/commands/looper.md`
-- `assets/config/.claude.json → ~/.claude/looper/.claude.json`
+- `skills/looper/ → ~/.claude/skills/looper/`
 
 > ✅ **已验证**：已通过 skill-test 流水线自动化验证（looper Stage 5）。
 
 ## 使用
 
 ```
-/looper --plugin <pkg>                    # 安装并验证 packer/<pkg>/
-/looper --plugin <pkg> --image <image>   # 显式指定容器镜像
+/looper --plugin <name>                          # 验证 packer/<name>/
+/looper --plugin <name> --plan a                 # 仅 Plan A（install.sh 路径）
+/looper --plugin <name> --plan b                 # 仅 Plan B（claude plugin 安装路径）
+/looper --plugin <name> --image <image>          # 显式指定容器镜像
+/looper --help                                   # 查看用法说明
 ```
 
 ## 前置依赖
@@ -32,7 +37,7 @@ CLAUDE_DIR=~/.claude bash install.sh
 
 ## 镜像策略
 
-looper 按以下优先级确定镜像（首次调用后持久化到 `looper/.looper-state.json`，后续调用复用）：
+looper 按以下优先级确定镜像（首次调用后持久化到 `packer/<name>/.looper-state.json`，后续调用复用）：
 
 | 优先级 | 来源 | 说明 |
 |--------|------|------|
@@ -57,23 +62,39 @@ docker build -t cc-runtime-minimal assets/image/
 
 镜像源码：[easyfan/agents-slim](https://github.com/easyfan/agents-slim)
 
+## 测试计划
+
+looper 运行两个独立验证计划。默认 `--plan both` 全部执行，也可用 `--plan a` / `--plan b` 单独运行。
+
+| 计划 | 步骤 | 验证内容 |
+|------|------|---------|
+| A | T2（A1–A7）| `install.sh` 接口合规性、文件安装、幂等性、卸载、dry-run |
+| B | T2b（B1–B8）| `claude plugin install` 路径（marketplace / 本地 `plugin.json`）|
+
+无论 `--plan` 取何值，以下测试始终运行：
+
+| 测试 | 验证内容 |
+|------|---------|
+| T0 | `plugin.json` manifest 合法性检查（宿主机，仅一次）|
+| T1 | 容器内 CC 可用性 |
+| T3 | skill 触发准确性（单次 `claude -p` 调用）|
+| T5 | 行为 eval suite（在容器内运行 `evals/evals.json`；`disable_t5: true` 时跳过）|
+
 ## 开发
 
 ### Evals
 
-`evals/evals.json` 包含 10 个测试用例，覆盖参数解析、目标查找、Docker 可用性检测、镜像策略和 T5 eval suite 执行的主要分支：
+`evals/evals.json` 包含 7 个测试用例，覆盖当前 `--plugin` 专属 CLI 的主要场景：
 
 | ID | 场景 | 验证重点 |
 |----|------|---------|
-| 1 | `/looper --plugin patterns` | 解析参数、检查目标路径存在、Docker 可用性检测；Docker 不可用时优雅退出；Docker 可用时触发 T5（evals.json 存在） |
-| 2 | `/looper --plugin xyz_nonexistent_...` | 目标不存在时输出"❌ target not found"，不尝试启动容器 |
-| 3 | `/looper --plugin patterns`（完整流程）| 定位 `packer/patterns/`，执行 `install.sh`，构建纯净环境，运行 T1–T3 |
-| 4 | `/looper`（无参数）| 输出用法说明；不执行任何 Docker 操作 |
-| 5 | `/looper --plugin patterns --image my-custom-registry:cc-runtime` | `--image` 参数设置 user-specified 策略（优先级 1），跳过 devcontainer 检测和缓存 |
-| 6 | 同上（前置 `.looper-state.json`）| 读取缓存状态文件，直接复用已记录镜像，不重新检测 |
-| 7 | 镜像策略输出验证 | 执行过程中输出含镜像名和策略说明（devcontainer / user-specified / fallback / cached 之一） |
-| 8 | T5 激活路径 — `/looper --plugin patterns`（evals.json 存在）| Step 4 注入 eval runner + evals.json；Docker 可用时 T5 执行并输出 EVAL_SUITE_RESULT |
-| 9 | T5 跳过路径 — `disable_t5: true` in evals.json | Step 4 输出"eval suite: skipped (disable_t5=true)"；T5 行显示 ⏭️；整体结果不因此失败 |
+| 1 | `/looper --help` | 用法文本包含四个参数说明和至少一个示例；不执行 Docker |
+| 2 | `/looper`（无参数）| 输出用法说明；不执行任何 Docker 操作 |
+| 3 | `/looper --plugin xyz_nonexistent_...` | 输出插件不存在错误；不启动容器 |
+| 4 | `/looper --plugin looper --plan a` | 仅 Plan A；T2b 结果为 skip |
+| 5 | `/looper --plugin looper --plan b` | 仅 Plan B；T2 结果为 skip |
+| 6 | `/looper --plugin looper --image my-custom-registry:cc-runtime` | `--image` 参数；user-specified 策略；输出含镜像名 |
+| 7 | `/looper --plugin looper` | 容器内找不到插件；优雅输出错误提示 |
 
 ### 跳过 T5
 
@@ -89,30 +110,25 @@ docker build -t cc-runtime-minimal assets/image/
 
 Step 4 进度输出将显示 `eval suite: skipped (disable_t5=true in evals.json)`，整体结果不因此标记为 FAIL。
 
-手动测试（在 Claude Code 会话中）：
-```bash
-/looper --plugin patterns     # 对应 eval 1
-/looper                       # 对应 eval 4（查看用法说明）
-```
-
-使用 skill-creator 的 eval loop 批量运行（如已安装）：
-```bash
-python ~/.claude/skills/skill-creator/scripts/run_loop.py \
-  --skill-path ~/.claude/commands/looper.md \
-  --evals-path evals/evals.json
-```
-
 ## 包结构
 
 ```
 looper/
-├── commands/looper.md          # 安装到 ~/.claude/commands/
-├── assets/
-│   ├── config/.claude.json     # 安装到 ~/.claude/looper/
-│   └── image/                  # cc-runtime-minimal 镜像源
-│       ├── Dockerfile
-│       └── .github/workflows/build-push.yml
+├── .claude-plugin/
+│   └── plugin.json             # 插件 manifest
+├── skills/looper/
+│   └── SKILL.md                # 安装到 ~/.claude/skills/looper/
+├── scripts/
+│   ├── run.sh                  # 核心验证逻辑
+│   └── run_eval_suite.py       # T5 eval runner（注入容器执行）
+├── assets/image/               # cc-runtime-minimal 镜像源
+│   ├── Dockerfile
+│   └── .github/workflows/build-push.yml
+├── test/
+│   ├── test-a.sh               # Plan A 宿主机测试
+│   ├── test-b.sh               # Plan B 宿主机测试
+│   └── test-all.sh
 ├── evals/evals.json
 ├── install.sh
-└── SKILL.md
+└── package.json
 ```

@@ -1,6 +1,6 @@
 # looper
 
-Deploy-Zeit-Verifikation für Claude Code Commands, Skills und Plugins — führt Installations-,
+Deploy-Zeit-Verifikation für Claude Code Plugins — führt Installations-,
 Trigger-Genauigkeits- und Verhaltens-Eval-Suite (T5) Tests in einem sauberen Docker-CC-Container
 aus. Wird als Stage 5 der skill-test-Pipeline eingesetzt.
 
@@ -8,23 +8,28 @@ aus. Wird als Stage 5 der skill-test-Pipeline eingesetzt.
 
 ```bash
 bash install.sh
-# oder ein benutzerdefiniertes Claude-Konfigurationsverzeichnis angeben
-bash install.sh --target ~/.claude
-# oder die CLAUDE_DIR-Konvention verwenden
+# Vorschau ohne Schreibzugriff
+bash install.sh --dry-run
+# Installierte Dateien entfernen
+bash install.sh --uninstall
+# Benutzerdefiniertes Claude-Konfigurationsverzeichnis (Flag oder Umgebungsvariable)
+bash install.sh --target=~/.claude
 CLAUDE_DIR=~/.claude bash install.sh
 ```
 
 Installiert:
-- `commands/looper.md → ~/.claude/commands/looper.md`
-- `assets/config/.claude.json → ~/.claude/looper/.claude.json`
+- `skills/looper/ → ~/.claude/skills/looper/`
 
 > ✅ **Verifiziert**: Abgedeckt durch die skill-test-Pipeline (looper Stage 5).
 
 ## Verwendung
 
 ```
-/looper --plugin <pkg>                    # packer/<pkg>/ installieren und verifizieren
-/looper --plugin <pkg> --image <image>   # explizites Container-Image verwenden
+/looper --plugin <name>                          # packer/<name>/ verifizieren
+/looper --plugin <name> --plan a                 # Nur Plan A (install.sh-Pfad)
+/looper --plugin <name> --plan b                 # Nur Plan B (claude plugin install-Pfad)
+/looper --plugin <name> --image <image>          # explizites Container-Image verwenden
+/looper --help                                   # Verwendungshinweis anzeigen
 ```
 
 ## Voraussetzungen
@@ -35,8 +40,8 @@ Installiert:
 ## Image-Strategie
 
 looper bestimmt das Container-Image anhand der folgenden Prioritätsreihenfolge (das Ergebnis
-wird nach dem ersten Aufruf in `looper/.looper-state.json` gespeichert und bei Folgeaufrufen
-wiederverwendet):
+wird nach dem ersten Aufruf in `packer/<name>/.looper-state.json` gespeichert und bei
+Folgeaufrufen wiederverwendet):
 
 | Priorität | Quelle | Hinweise |
 |-----------|--------|----------|
@@ -61,24 +66,40 @@ docker build -t cc-runtime-minimal assets/image/
 
 Image-Quellcode: [easyfan/agents-slim](https://github.com/easyfan/agents-slim)
 
+## Testpläne
+
+looper führt zwei unabhängige Verifikationspläne aus. Mit `--plan both` (Standard) werden alle
+Tests ausgeführt, mit `--plan a` bzw. `--plan b` jeweils nur ein Plan.
+
+| Plan | Schritte | Was verifiziert wird |
+|------|----------|---------------------|
+| A | T2 (A1–A7) | `install.sh`-Schnittstellenkonformität, Dateiinstallation, Idempotenz, Deinstallation, Dry-run |
+| B | T2b (B1–B8) | `claude plugin install`-Pfad (Marketplace / lokale `plugin.json`) |
+
+Diese Tests laufen unabhängig vom `--plan`-Parameter immer mit:
+
+| Test | Was verifiziert wird |
+|------|---------------------|
+| T0 | `plugin.json`-Manifest-Validierung (Host, einmalig) |
+| T1 | CC-Verfügbarkeit im Container |
+| T3 | Skill-Trigger-Genauigkeit (einzelner `claude -p`-Aufruf) |
+| T5 | Verhaltens-Eval-Suite (führt `evals/evals.json` im Container aus; übersprungen bei `disable_t5: true`) |
+
 ## Entwicklung
 
 ### Evals
 
-`evals/evals.json` enthält 10 Testfälle, die Argument-Parsing, Zielauflösung,
-Docker-Verfügbarkeitserkennung, Image-Strategiezweige und die Ausführung der T5-Eval-Suite abdecken:
+`evals/evals.json` enthält 7 Testfälle für die aktuelle `--plugin`-only-CLI:
 
 | ID | Szenario | Was verifiziert wird |
 |----|----------|---------------------|
-| 1 | `/looper --plugin patterns` | Argument-Parsing, Zielpfad-Existenz, Docker-Verfügbarkeit; graceful Exit bei fehlendem Docker; T5 ausgelöst wenn Docker verfügbar (evals.json vorhanden) |
-| 2 | `/looper --plugin xyz_nonexistent_...` | Gibt "❌ target not found" aus wenn `packer/<pkg>` fehlt; kein Container wird gestartet |
-| 3 | `/looper --plugin patterns` (vollständiger Ablauf) | Findet `packer/patterns/`, führt `install.sh` aus, baut saubere Umgebung, führt T1–T3 aus |
-| 4 | `/looper` (ohne Argumente) | Gibt Verwendungshinweis aus; keine Docker-Operationen |
-| 5 | `/looper --plugin patterns --image my-custom-registry:cc-runtime` | `--image` Flag setzt user-specified Strategie (Priorität 1), überspringt devcontainer-Erkennung und Cache |
-| 6 | Wie oben (mit vorhandenem `.looper-state.json`) | Liest gecachte State-Datei, verwendet aufgezeichnetes Image ohne Neuerkennnung |
-| 7 | Image-Strategie-Ausgabe-Verifikation | Ausführungsausgabe enthält Image-Name und Strategie-Label (devcontainer / user-specified / fallback / cached) |
-| 8 | T5 aktiv — `/looper --plugin patterns` (evals.json vorhanden) | Step 4 injiziert Eval-Runner + evals.json; bei verfügbarem Docker läuft T5 und gibt EVAL_SUITE_RESULT aus |
-| 9 | T5 übersprungen — `disable_t5: true` in evals.json | Step 4 vermerkt "eval suite: skipped (disable_t5=true)"; T5-Zeile zeigt ⏭️; Gesamtergebnis nicht fehlgeschlagen |
+| 1 | `/looper --help` | Hilfetext enthält alle vier Flags und mindestens ein Verwendungsbeispiel; kein Docker ausgeführt |
+| 2 | `/looper` (ohne Argumente) | Gibt Verwendungshinweis aus; keine Docker-Operationen |
+| 3 | `/looper --plugin xyz_nonexistent_...` | Gibt Fehler "Plugin nicht gefunden" aus; kein Container gestartet |
+| 4 | `/looper --plugin looper --plan a` | Nur Plan A; T2b-Ergebnis ist skip |
+| 5 | `/looper --plugin looper --plan b` | Nur Plan B; T2-Ergebnis ist skip |
+| 6 | `/looper --plugin looper --image my-custom-registry:cc-runtime` | `--image` Flag; user-specified Strategie; Image-Name erscheint in der Ausgabe |
+| 7 | `/looper --plugin looper` | Plugin im Container nicht gefunden; graceful Fehlerausgabe |
 
 ### T5 deaktivieren
 
@@ -98,30 +119,25 @@ ausgeführt werden können.
 Step 4 gibt `eval suite: skipped (disable_t5=true in evals.json)` aus. Das Gesamtergebnis
 wird dadurch nicht als FAIL markiert.
 
-Manuelles Testen (in einer Claude Code-Sitzung):
-```bash
-/looper --plugin patterns     # eval 1
-/looper                       # eval 4 — Verwendungshinweis anzeigen
-```
-
-Alle Evals mit dem Eval-Loop von skill-creator ausführen (falls installiert):
-```bash
-python ~/.claude/skills/skill-creator/scripts/run_loop.py \
-  --skill-path ~/.claude/commands/looper.md \
-  --evals-path evals/evals.json
-```
-
 ## Paketstruktur
 
 ```
 looper/
-├── commands/looper.md          # installiert nach ~/.claude/commands/
-├── assets/
-│   ├── config/.claude.json     # installiert nach ~/.claude/looper/
-│   └── image/                  # cc-runtime-minimal Image-Quellcode
-│       ├── Dockerfile
-│       └── .github/workflows/build-push.yml
+├── .claude-plugin/
+│   └── plugin.json             # Plugin-Manifest
+├── skills/looper/
+│   └── SKILL.md                # installiert nach ~/.claude/skills/looper/
+├── scripts/
+│   ├── run.sh                  # Kern-Verifikationslogik
+│   └── run_eval_suite.py       # T5 Eval-Runner (in Container injiziert)
+├── assets/image/               # cc-runtime-minimal Image-Quellcode
+│   ├── Dockerfile
+│   └── .github/workflows/build-push.yml
+├── test/
+│   ├── test-a.sh               # Plan A Host-Tests
+│   ├── test-b.sh               # Plan B Host-Tests
+│   └── test-all.sh
 ├── evals/evals.json
 ├── install.sh
-└── SKILL.md
+└── package.json
 ```
