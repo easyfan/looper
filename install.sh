@@ -1,44 +1,107 @@
 #!/usr/bin/env bash
-set -euo pipefail
-
-# looper installer
+# install.sh — looper Claude Code plugin installer
 # ✅ Verified by automated tests: this install path is covered by the skill-test pipeline (looper Stage 5).
 #
 # Usage:
-#   bash install.sh [--target <claude_home>]
-#   CLAUDE_DIR=<claude_home> bash install.sh      # packer convention (lower priority than --target)
-#
-# Installs:
-#   commands/looper.md → <claude_home>/commands/looper.md
-#
-# Runtime notes (not handled by install.sh — for reference only):
-#   Image selection strategy (5-level priority):
-#     1. --image <image> flag (explicit override; not written to state cache)
-#     2. .looper-state.json cache (reuses image from previous run)
-#     3. devcontainer.json image (auto-detected)
-#     4. Local cc-runtime-minimal (previously built or pulled)
-#     5. fallback: guide user to build or pull cc-runtime-minimal, then retry
-#   Obtain cc-runtime-minimal (pick one):
-#     pull:  docker pull easyfan/agents-slim:cc-runtime-minimal && docker tag easyfan/agents-slim:cc-runtime-minimal cc-runtime-minimal
-#     build: docker build -t cc-runtime-minimal <pkg>/assets/image/
-#   After first run, image config is persisted to <project>/looper/.looper-state.json; reused on subsequent calls.
-#   To switch images: /looper --plugin <pkg> --image <image>
+#   ./install.sh              # install to ~/.claude/
+#   ./install.sh --dry-run    # preview without writing
+#   ./install.sh --uninstall  # remove installed files
+#   CLAUDE_DIR=/path ./install.sh  # custom target
 
-TARGET="${CLAUDE_DIR:-${HOME}/.claude}"
+set -euo pipefail
 
-while [[ $# -gt 0 ]]; do
-  case "$1" in
-    --target) TARGET="$2"; shift 2 ;;
-    *) echo "Unknown arg: $1"; exit 1 ;;
+# ── Resolve real script dir (symlink-safe, same pattern as ecc) ──────────────
+SCRIPT_PATH="$0"
+while [ -L "$SCRIPT_PATH" ]; do
+  link_dir="$(cd "$(dirname "$SCRIPT_PATH")" && pwd)"
+  SCRIPT_PATH="$(readlink "$SCRIPT_PATH")"
+  [[ "$SCRIPT_PATH" != /* ]] && SCRIPT_PATH="$link_dir/$SCRIPT_PATH"
+done
+SCRIPT_DIR="$(cd "$(dirname "$SCRIPT_PATH")" && pwd)"
+
+# ── Config ───────────────────────────────────────────────────────────────────
+CLAUDE_DIR="${CLAUDE_DIR:-$HOME/.claude}"
+DRY_RUN=false
+UNINSTALL=false
+
+for arg in "$@"; do
+  case "$arg" in
+    --dry-run)    DRY_RUN=true ;;
+    --uninstall)  UNINSTALL=true ;;
+    --target=*)   CLAUDE_DIR="${arg#--target=}" ;;
+    --help|-h)
+      echo "Usage: ./install.sh [--dry-run] [--uninstall] [--target=<path>]"
+      echo "  CLAUDE_DIR=/path ./install.sh   # custom Claude config dir (env var)"
+      echo "  ./install.sh --target=/path     # custom Claude config dir (flag)"
+      exit 0 ;;
   esac
 done
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# ── Helpers ──────────────────────────────────────────────────────────────────
+info()  { printf "  %s\n" "$*"; }
+ok()    { printf "  \033[32m✓\033[0m %s\n" "$*"; }
+skip()  { printf "  \033[2m– %s (up to date)\033[0m\n" "$*"; }
+warn()  { printf "  \033[33m! %s\033[0m\n" "$*"; }
+run()   { $DRY_RUN || "$@"; }
 
-mkdir -p "${TARGET}/commands"
-cp "${SCRIPT_DIR}/commands/looper.md" "${TARGET}/commands/looper.md"
-echo "✅ looper installed → ${TARGET}/commands/looper.md"
+SKILL_SRC="skills/looper"
+SKILL_DST="skills/looper"
 
-mkdir -p "${TARGET}/looper"
-cp "${SCRIPT_DIR}/assets/config/.claude.json" "${TARGET}/looper/.claude.json"
-echo "✅ looper config  → ${TARGET}/looper/.claude.json"
+# ── Header ───────────────────────────────────────────────────────────────────
+echo ""
+echo "  looper — Claude Code plugin v$(grep '"version"' "$SCRIPT_DIR/package.json" | head -1 | grep -o '[0-9.]*')"
+echo "  Target: $CLAUDE_DIR"
+$DRY_RUN && echo "  Mode: DRY RUN (no files modified)"
+echo ""
+
+# ── Check Claude Code ─────────────────────────────────────────────────────────
+if ! command -v claude &>/dev/null; then
+  warn "'claude' CLI not found. Install Claude Code first: https://claude.ai/code"
+  echo ""
+fi
+
+# ── Uninstall ─────────────────────────────────────────────────────────────────
+if $UNINSTALL; then
+  echo "  Uninstalling..."
+  skill_dst="$CLAUDE_DIR/$SKILL_DST"
+  if [ -d "$skill_dst" ]; then
+    run rm -rf "$skill_dst"
+    ok "Removed $skill_dst"
+  else
+    skip "$SKILL_DST (not found)"
+  fi
+  echo ""
+  echo "  Uninstall complete."
+  echo ""
+  exit 0
+fi
+
+# ── Install ───────────────────────────────────────────────────────────────────
+changed=0
+
+# ── Skill ─────────────────────────────────────────────────────────────────────
+skill_src="$SCRIPT_DIR/$SKILL_SRC"
+skill_dst="$CLAUDE_DIR/$SKILL_DST"
+if [ -f "$skill_dst/SKILL.md" ] && diff -q "$skill_src/SKILL.md" "$skill_dst/SKILL.md" &>/dev/null; then
+  skip "$SKILL_DST"
+else
+  [ -d "$skill_dst" ] && info "Updating  $SKILL_DST..." || info "Installing $SKILL_DST..."
+  run mkdir -p "$skill_dst"
+  run cp -r "$skill_src/." "$skill_dst/"
+  ok "$SKILL_DST → $skill_dst"
+  changed=$((changed + 1))
+fi
+
+# ── Footer ────────────────────────────────────────────────────────────────────
+echo ""
+if $DRY_RUN; then
+  echo "  [dry-run] $changed file(s) would be modified."
+else
+  echo "  Done! $changed file(s) installed."
+  echo ""
+  echo "  Quick start:"
+  echo "    /looper --plugin <name>           # verify plugin deployment"
+  echo "    /looper --plugin <name> --plan a  # Plan A only (install.sh path)"
+  echo "    /looper --plugin <name> --plan b  # Plan B only (claude plugin install path)"
+fi
+echo ""
