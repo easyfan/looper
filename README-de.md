@@ -124,7 +124,9 @@ wird dadurch nicht als FAIL markiert.
 ```
 looper/
 ├── .claude-plugin/
-│   └── plugin.json             # Plugin-Manifest
+│   ├── plugin.json             # Plugin-Manifest
+│   └── marketplace.json        # Marketplace-Eintrag
+├── DESIGN.md                   # Architekturnotizen
 ├── skills/looper/
 │   └── SKILL.md                # installiert nach ~/.claude/skills/looper/
 ├── scripts/

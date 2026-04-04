@@ -123,7 +123,9 @@ n'est pas marqué FAIL pour cette raison.
 ```
 looper/
 ├── .claude-plugin/
-│   └── plugin.json             # manifest du plugin
+│   ├── plugin.json             # manifest du plugin
+│   └── marketplace.json        # entrée marketplace
+├── DESIGN.md                   # notes d'architecture
 ├── skills/looper/
 │   └── SKILL.md                # installé dans ~/.claude/skills/looper/
 ├── scripts/

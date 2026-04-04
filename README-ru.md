@@ -122,7 +122,9 @@ Step 4 выведет `eval suite: skipped (disable_t5=true in evals.json)`. О�
 ```
 looper/
 ├── .claude-plugin/
-│   └── plugin.json             # манифест плагина
+│   ├── plugin.json             # манифест плагина
+│   └── marketplace.json        # запись marketplace
+├── DESIGN.md                   # заметки по архитектуре
 ├── skills/looper/
 │   └── SKILL.md                # устанавливается в ~/.claude/skills/looper/
 ├── scripts/

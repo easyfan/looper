@@ -123,7 +123,9 @@ output. The overall result is not failed.
 ```
 looper/
 ├── .claude-plugin/
-│   └── plugin.json             # plugin manifest
+│   ├── plugin.json             # plugin manifest
+│   └── marketplace.json        # marketplace entry
+├── DESIGN.md                   # architecture notes
 ├── skills/looper/
 │   └── SKILL.md                # installed to ~/.claude/skills/looper/
 ├── scripts/

@@ -1,0 +1,22 @@
+{
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
+  "name": "looper",
+  "description": "Pre-publish deployment verifier for Claude Code plugins",
+  "owner": {
+    "name": "easyfan",
+    "email": "zhengfan@apache.org"
+  },
+  "plugins": [
+    {
+      "name": "looper",
+      "description": "1 skill (/looper). Runs install integrity (Plan A), marketplace install (Plan B), trigger accuracy (T3), and behavioral eval suite (T5) tests inside a clean Docker CC container. Used as Stage 5 of the skill-test pipeline.",
+      "category": "workflow",
+      "source": {
+        "source": "url",
+        "url": "https://github.com/easyfan/looper.git",
+        "sha": "d2e8a37dc3e6b3dedea627783bff53f5535a4336"
+      },
+      "homepage": "https://github.com/easyfan/looper"
+    }
+  ]
+}

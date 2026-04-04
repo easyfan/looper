@@ -115,7 +115,9 @@ Step 4 进度输出将显示 `eval suite: skipped (disable_t5=true in evals.json
 ```
 looper/
 ├── .claude-plugin/
-│   └── plugin.json             # 插件 manifest
+│   ├── plugin.json             # 插件 manifest
+│   └── marketplace.json        # 市场入口
+├── DESIGN.md                   # 架构说明
 ├── skills/looper/
 │   └── SKILL.md                # 安装到 ~/.claude/skills/looper/
 ├── scripts/

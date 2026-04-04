@@ -1,6 +1,6 @@
 {
   "name": "looper",
-  "version": "0.2.0",
+  "version": "1.0.0",
   "description": "Pre-publish deployment verifier for Claude Code plugins. Runs install integrity and trigger accuracy tests in a clean Docker CC container.",
   "author": {
     "name": "easyfan",
