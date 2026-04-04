@@ -400,6 +400,10 @@ fi
 
 if [[ -f "$SKILL_MD_PATH" ]]; then
   DESC=$(grep "^description:" "$SKILL_MD_PATH" 2>/dev/null | head -1 | sed 's/^description:[[:space:]]*//')
+  # Handle YAML block scalar (description: | or description: >) — first line is empty; take next non-empty line
+  if [[ -z "$(echo "$DESC" | tr -d '[:space:]|>')" ]]; then
+    DESC=$(awk '/^description:/{found=1; next} found && /^[[:space:]]+[^[:space:]]/{gsub(/^[[:space:]]+/,""); print; exit} found && /^[^[:space:]]/{exit}' "$SKILL_MD_PATH")
+  fi
   TRIGGER_PROMPT="${DESC:0:80}：请处理一个简单示例，无交互直接完成"
 else
   TRIGGER_PROMPT="${NAME}：请处理一个简单示例，无交互直接完成"

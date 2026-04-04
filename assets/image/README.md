@@ -6,7 +6,7 @@ Minimal Docker images for AI agent tooling. Each image ships only what a specifi
 
 | Tag | Base | Description |
 |-----|------|-------------|
-| `cc-runtime-minimal` | `node:20-slim` | Bare Claude Code CLI runtime for isolated skill/command verification |
+| `cc-runtime-minimal` | `node:20-slim` | Claude Code CLI runtime with git and CA certificates for isolated plugin verification |
 | `cc-runtime-minimal-YYYY-MM` | same | Dated tag for version pinning |
 
 ## Usage
