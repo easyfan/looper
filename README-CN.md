@@ -4,7 +4,26 @@
 
 ## 安装
 
+### Option A — Claude Code 插件市场
+
+```
+/plugin marketplace update looper
+/plugin install looper@looper
+```
+
+> 首次使用？先添加市场：
+> ```
+> /plugin marketplace add easyfan/looper
+> /plugin install looper@looper
+> ```
+
+> ⚠️ **未经自动化验证**：`/plugin` 是 Claude Code REPL 内置命令，无法通过 `claude -p` 调用，需在 Claude Code 会话中手动执行；不在 skill-test 流水线（looper Stage 5）覆盖范围内。
+
+### Option B — 本地脚本
+
 ```bash
+git clone https://github.com/easyfan/looper
+cd looper
 bash install.sh
 # 预览，不实际写入
 bash install.sh --dry-run
@@ -17,6 +36,14 @@ CLAUDE_DIR=~/.claude bash install.sh
 
 安装内容：
 - `skills/looper/ → ~/.claude/skills/looper/`
+
+> ✅ **已验证**：已通过 skill-test 流水线自动化验证（looper Stage 5）。
+
+### Option C — 手动
+
+```bash
+cp -r skills/looper ~/.claude/skills/looper
+```
 
 > ✅ **已验证**：已通过 skill-test 流水线自动化验证（looper Stage 5）。
 

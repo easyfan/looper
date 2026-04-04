@@ -6,7 +6,26 @@
 
 ## Установка
 
+### Option A — Маркетплейс плагинов Claude Code
+
+```
+/plugin marketplace update looper
+/plugin install looper@looper
+```
+
+> Первое использование? Сначала добавьте маркетплейс:
+> ```
+> /plugin marketplace add easyfan/looper
+> /plugin install looper@looper
+> ```
+
+> ⚠️ **Не проверено автоматическими тестами**: `/plugin` — встроенная команда REPL Claude Code, недоступная через `claude -p`. Запускать вручную в сессии Claude Code; не охвачено конвейером skill-test (looper Stage 5).
+
+### Option B — Скрипт установки
+
 ```bash
+git clone https://github.com/easyfan/looper
+cd looper
 bash install.sh
 # Предварительный просмотр без записи файлов
 bash install.sh --dry-run
@@ -19,6 +38,14 @@ CLAUDE_DIR=~/.claude bash install.sh
 
 Устанавливает:
 - `skills/looper/ → ~/.claude/skills/looper/`
+
+> ✅ **Проверено**: покрыто конвейером skill-test (looper Stage 5).
+
+### Option C — Вручную
+
+```bash
+cp -r skills/looper ~/.claude/skills/looper
+```
 
 > ✅ **Проверено**: покрыто конвейером skill-test (looper Stage 5).
 

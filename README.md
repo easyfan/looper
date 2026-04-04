@@ -6,7 +6,26 @@ Used as Stage 5 of the skill-test pipeline.
 
 ## Install
 
+### Option A — Claude Code plugin marketplace
+
+```
+/plugin marketplace update looper
+/plugin install looper@looper
+```
+
+> First time? Add the marketplace first:
+> ```
+> /plugin marketplace add easyfan/looper
+> /plugin install looper@looper
+> ```
+
+> ⚠️ **Not verified by automated tests**: `/plugin` is a Claude Code REPL built-in and cannot be invoked via `claude -p`. Run manually in a Claude Code session; not covered by skill-test pipeline (looper Stage 5).
+
+### Option B — install script
+
 ```bash
+git clone https://github.com/easyfan/looper
+cd looper
 bash install.sh
 # preview without writing
 bash install.sh --dry-run
@@ -19,6 +38,14 @@ CLAUDE_DIR=~/.claude bash install.sh
 
 Installs:
 - `skills/looper/ → ~/.claude/skills/looper/`
+
+> ✅ **Verified**: covered by the skill-test pipeline (looper Stage 5).
+
+### Option C — manual
+
+```bash
+cp -r skills/looper ~/.claude/skills/looper
+```
 
 > ✅ **Verified**: covered by the skill-test pipeline (looper Stage 5).
 

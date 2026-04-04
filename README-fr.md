@@ -6,7 +6,26 @@ Docker CC propre. Utilisé comme étape 5 du pipeline skill-test.
 
 ## Installation
 
+### Option A — Place de marché de plugins Claude Code
+
+```
+/plugin marketplace update looper
+/plugin install looper@looper
+```
+
+> Première utilisation ? Ajoutez d'abord la place de marché :
+> ```
+> /plugin marketplace add easyfan/looper
+> /plugin install looper@looper
+> ```
+
+> ⚠️ **Non vérifié par des tests automatisés** : `/plugin` est une commande intégrée du REPL Claude Code et ne peut pas être invoquée via `claude -p`. À exécuter manuellement dans une session Claude Code ; non couvert par le pipeline skill-test (looper Stage 5).
+
+### Option B — Script d'installation
+
 ```bash
+git clone https://github.com/easyfan/looper
+cd looper
 bash install.sh
 # Aperçu sans écriture
 bash install.sh --dry-run
@@ -19,6 +38,14 @@ CLAUDE_DIR=~/.claude bash install.sh
 
 Installe :
 - `skills/looper/ → ~/.claude/skills/looper/`
+
+> ✅ **Vérifié** : couvert par le pipeline skill-test (looper Stage 5).
+
+### Option C — Manuel
+
+```bash
+cp -r skills/looper ~/.claude/skills/looper
+```
 
 > ✅ **Vérifié** : couvert par le pipeline skill-test (looper Stage 5).
 
