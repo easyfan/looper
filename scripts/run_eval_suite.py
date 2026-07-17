@@ -2,11 +2,11 @@
 """Looper T5: run evals.json inside clean CC container."""
 import json, os, subprocess, sys
 
-def run_claude(prompt, timeout=180):
+def run_claude(prompt, timeout=240, cwd=None):
     try:
         r = subprocess.run(
             ['claude', '--dangerously-skip-permissions', '-p', prompt],
-            capture_output=True, text=True, timeout=timeout
+            capture_output=True, text=True, timeout=timeout, cwd=cwd
         )
         return (r.stdout + r.stderr).strip(), True
     except subprocess.TimeoutExpired:
@@ -14,13 +14,61 @@ def run_claude(prompt, timeout=180):
     except Exception as e:
         return str(e), False
 
-def grade(assertion, output):
+def excerpt(text, limit=6000):
+    if len(text) <= limit:
+        return text
+    half = limit // 2
+    return text[:half] + '\n...[truncated]...\n' + text[-half:]
+
+def snapshot(root):
+    snap = {}
+    for dirpath, _, names in os.walk(root):
+        for n in names:
+            p = os.path.join(dirpath, n)
+            try:
+                snap[p] = os.path.getmtime(p)
+            except OSError:
+                pass
+    return snap
+
+def files_summary(root, before, cap=5000):
+    # List files created or modified since `before`, with content excerpts,
+    # so the judge can verify filesystem-effect assertions.
+    lines, used, count = [], 0, 0
+    for dirpath, _, names in os.walk(root):
+        for n in sorted(names):
+            p = os.path.join(dirpath, n)
+            try:
+                mtime = os.path.getmtime(p)
+            except OSError:
+                continue
+            if before.get(p) == mtime:
+                continue
+            count += 1
+            rel = os.path.relpath(p, root)
+            try:
+                with open(p, errors='replace') as f:
+                    content = f.read(1500)
+            except OSError:
+                content = '<unreadable>'
+            entry = f'--- {rel} ---\n{content}\n'
+            if used + len(entry) > cap:
+                lines.append(f'--- {rel} --- (content omitted, size cap)')
+                continue
+            lines.append(entry)
+            used += len(entry)
+    return ('\n'.join(lines) if lines else '(no files created or modified)'), count
+
+def grade(assertion, output, fsummary):
     prompt = (
-        "Does the following output satisfy the assertion? "
-        "Answer ONLY with YES or NO.\n\n"
-        f"Assertion: {assertion}\n\nOutput:\n{output[:2000]}"
+        'You are grading one assertion against an agent reply and the files the '
+        'agent created or modified in its working directory. '
+        'Answer ONLY with YES or NO.\n\n'
+        f'Assertion: {assertion}\n\n'
+        f'Files created/modified during the run:\n{fsummary}\n\n'
+        f'Agent reply:\n{excerpt(output)}'
     )
-    result, ok = run_claude(prompt, timeout=30)
+    result, ok = run_claude(prompt, timeout=90)
     return ok and 'YES' in result.upper().split()
 
 def main():
@@ -37,13 +85,23 @@ def main():
             ev.get('id','?'), ev.get('prompt',''),
             ev.get('assertions',[]), ev.get('files',[])
         )
+        # Isolated per-case dir: files written by one case must not leak into
+        # the next case's filesystem assertions.
+        case_dir = os.path.join(work_dir, f'case_{eid}')
+        os.makedirs(case_dir, exist_ok=True)
         for fspec in files:
-            p = os.path.join(work_dir, fspec['path'])
-            os.makedirs(os.path.dirname(p), exist_ok=True)
+            p = os.path.join(case_dir, fspec['path'])
+            os.makedirs(os.path.dirname(p) or case_dir, exist_ok=True)
             open(p, 'w').write(fspec['content'])
+        before = snapshot(case_dir)
         print(f'  [{eid}] {prompt[:60]}', flush=True)
-        output, _ = run_claude(prompt)
-        results = [grade(a if isinstance(a, str) else a.get('text', str(a)), output) for a in asserts]
+        output, agent_ok = run_claude(prompt, cwd=case_dir)
+        fsummary, nchanged = files_summary(case_dir, before)
+        # Diagnostic line: distinguishes "agent call failed" from "agent ran but
+        # behaved differently" when reading reports after the fact.
+        status = output if output in ('TIMEOUT',) or not agent_ok else f'{len(output)} chars'
+        print(f'    (agent reply: {status}; changed files: {nchanged})', flush=True)
+        results = [grade(a if isinstance(a, str) else a.get('text', str(a)), output, fsummary) for a in asserts]
         if all(results):
             passed += 1
         for a, r in zip(asserts, results):

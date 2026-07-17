@@ -73,17 +73,30 @@ if [[ ! -f "$CLAUDE_JSON_SRC" ]]; then
   die ".claude.json not found: $CLAUDE_JSON_SRC — run looper/install.sh first"
 fi
 
-# ── Credential detection ──────────────────────────────────────────────────────
-# T3/T5 run claude inside the container; its only credential source is
-# host settings.json env → docker -e ANTHROPIC_API_KEY. A host on
-# subscription OAuth has no env key, so in-container claude cannot log in —
-# degrade T3/T5 to skip (environment gap, not a plugin regression).
+# ── Credential resolution ─────────────────────────────────────────────────────
+# T3/T5 run claude inside the container, which needs an API key. Resolution
+# order: looper-specific credentials file (lets the host stay on subscription
+# OAuth while containers use a dedicated key) → host settings.json env.
+# If neither yields a key, degrade T3/T5 to skip (environment gap, not a
+# plugin regression).
+LOOPER_CRED_FILE="$HOME/.claude/looper/credentials.env"
+LOOPER_API_KEY=""
+LOOPER_BASE_URL=""
+CRED_SOURCE="none"
+if [[ -f "$LOOPER_CRED_FILE" ]]; then
+  LOOPER_API_KEY=$(grep -E '^ANTHROPIC_API_KEY=' "$LOOPER_CRED_FILE" | head -1 | cut -d= -f2- || true)
+  LOOPER_BASE_URL=$(grep -E '^ANTHROPIC_BASE_URL=' "$LOOPER_CRED_FILE" | head -1 | cut -d= -f2- || true)
+  [[ -n "$LOOPER_API_KEY" ]] && CRED_SOURCE="credentials.env"
+fi
+if [[ -z "$LOOPER_API_KEY" ]]; then
+  LOOPER_API_KEY=$(python3 -c "import json; e=json.load(open('$HOME/.claude/settings.json')).get('env',{}); print(e.get('ANTHROPIC_API_KEY', e.get('ANTHROPIC_AUTH_TOKEN','')))" 2>/dev/null || true)
+  LOOPER_BASE_URL=$(python3 -c "import json; print(json.load(open('$HOME/.claude/settings.json')).get('env',{}).get('ANTHROPIC_BASE_URL',''))" 2>/dev/null || true)
+  [[ -n "$LOOPER_API_KEY" ]] && CRED_SOURCE="settings.json"
+fi
 NO_CRED=false
-_cred=$(python3 -c "import json; e=json.load(open('$HOME/.claude/settings.json')).get('env',{}); print(e.get('ANTHROPIC_API_KEY', e.get('ANTHROPIC_AUTH_TOKEN','')))" 2>/dev/null || true)
-if [[ -z "$_cred" ]]; then
+if [[ -z "$LOOPER_API_KEY" ]]; then
   NO_CRED=true
 fi
-unset _cred
 
 # ── Image selection ───────────────────────────────────────────────────────────
 IMAGE=""
@@ -193,7 +206,9 @@ fi
 
 log "[looper] plugin=$NAME image=$IMAGE strategy=$IMAGE_STRATEGY evals=${EVAL_COUNT:-0}"
 if [[ "$NO_CRED" == "true" ]]; then
-  log "[looper] no API credential in host settings.json env — T3/T5 will be skipped"
+  log "[looper] no API credential (looper credentials.env and settings.json env both empty) — T3/T5 will be skipped"
+else
+  log "[looper] credential source: $CRED_SOURCE"
 fi
 
 
@@ -209,8 +224,8 @@ docker run -d \
   -v "${LOOPER_TMP}:${WORK_DIR}" \
   -v "${PLUGIN_PATH}:/plugin_src:ro" \
   ${PROXY_ENV_ARGS:+"${PROXY_ENV_ARGS[@]}"} \
-  -e ANTHROPIC_API_KEY="$(python3 -c "import json; e=json.load(open('$HOME/.claude/settings.json')).get('env',{}); print(e.get('ANTHROPIC_API_KEY', e.get('ANTHROPIC_AUTH_TOKEN','')))" 2>/dev/null)" \
-  -e ANTHROPIC_BASE_URL="$(python3 -c "import json; print(json.load(open('$HOME/.claude/settings.json')).get('env',{}).get('ANTHROPIC_BASE_URL',''))" 2>/dev/null)" \
+  -e ANTHROPIC_API_KEY="$LOOPER_API_KEY" \
+  -e ANTHROPIC_BASE_URL="$LOOPER_BASE_URL" \
   -e CLAUDE_CODE_MAX_OUTPUT_TOKENS="64000" \
   -e IS_SANDBOX=1 \
   -e JINA_API_KEY="${JINA_API_KEY:-}" \
@@ -311,8 +326,8 @@ docker run -d \
   -v "${LOOPER_TMP}/.claude.json:/root/.claude.json" \
   -v "${PLUGIN_PATH}:/plugin_src:ro" \
   ${PROXY_ENV_ARGS:+"${PROXY_ENV_ARGS[@]}"} \
-  -e ANTHROPIC_API_KEY="$(python3 -c "import json; e=json.load(open('$HOME/.claude/settings.json')).get('env',{}); print(e.get('ANTHROPIC_API_KEY', e.get('ANTHROPIC_AUTH_TOKEN','')))" 2>/dev/null)" \
-  -e ANTHROPIC_BASE_URL="$(python3 -c "import json; print(json.load(open('$HOME/.claude/settings.json')).get('env',{}).get('ANTHROPIC_BASE_URL',''))" 2>/dev/null)" \
+  -e ANTHROPIC_API_KEY="$LOOPER_API_KEY" \
+  -e ANTHROPIC_BASE_URL="$LOOPER_BASE_URL" \
   -e CLAUDE_CODE_MAX_OUTPUT_TOKENS="64000" \
   -e IS_SANDBOX=1 \
   -u root \
@@ -409,7 +424,7 @@ T3_OUT=""
 if [[ "$NO_CRED" == "true" ]]; then
 
 T3_PASS="skip"
-T3_OUT="skipped: no credentials — host settings.json env has no ANTHROPIC_API_KEY/ANTHROPIC_AUTH_TOKEN, in-container claude cannot authenticate"
+T3_OUT="skipped: no credentials — neither ~/.claude/looper/credentials.env nor host settings.json env provides ANTHROPIC_API_KEY/ANTHROPIC_AUTH_TOKEN, in-container claude cannot authenticate"
 log "[T3] skip (no credentials)"
 
 else
@@ -460,7 +475,7 @@ T5_OUT=""
 if [[ "$HAS_EVALS" == "true" && "$NO_CRED" == "true" ]]; then
   T5_PASS="skip"
   T5_RATE="no_credentials"
-  T5_OUT="skipped: no credentials — host settings.json env has no ANTHROPIC_API_KEY/ANTHROPIC_AUTH_TOKEN, in-container evals cannot run"
+  T5_OUT="skipped: no credentials — neither ~/.claude/looper/credentials.env nor host settings.json env provides ANTHROPIC_API_KEY/ANTHROPIC_AUTH_TOKEN, in-container evals cannot run"
   log "[T5] skip (no credentials)"
 elif [[ "$HAS_EVALS" == "true" ]]; then
   log "[T5] running $EVAL_COUNT eval cases..."

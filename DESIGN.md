@@ -21,7 +21,7 @@ plugin 有两条交付路径，looper 对两者都需要验证：
 
 ### settings.json 分层构造
 容器内 settings.json 按需构造，不直接挂载宿主机配置：
-- **API 凭证**（`ANTHROPIC_AUTH_TOKEN`、`ANTHROPIC_BASE_URL` 等）：从宿主机 `settings.json` 的 `env` 注入；若宿主机走订阅 OAuth（env 无 key），容器内 claude 无法认证，T3/T5 自动降级为 skip（见 §5.1）
+- **API 凭证**（`ANTHROPIC_API_KEY`、`ANTHROPIC_BASE_URL` 等）：按 `~/.claude/looper/credentials.env` → 宿主机 `settings.json` env 的优先级解析后注入容器；两处均无 key 时 T3/T5 自动降级为 skip（见 §5.1）
 - **`extraKnownMarketplaces`**：Plan A 中为空；Plan B 中从空开始，通过测试步骤内的 `claude plugin marketplace add` 写入
 - 目的：测试的是 CC 工具链自身的配置写入能力，而不是继承宿主机已有配置
 
@@ -119,10 +119,15 @@ Plan A 和 Plan B 可通过 `--plan a`/`--plan b` 单独运行，默认两者都
 
 ### 5.1 凭证缺失降级（T3/T5）
 
-T3/T5 需要容器内 claude 实际调用 API，唯一凭证来源是宿主机 `settings.json` env →
-`docker -e ANTHROPIC_API_KEY` 注入链。宿主机走订阅 OAuth 时 env 无 key，此时：
+T3/T5 需要容器内 claude 实际调用 API。凭证按以下顺序解析后经 `docker -e` 注入：
 
-- **run.sh 启动时探测**：env 中 `ANTHROPIC_API_KEY`/`ANTHROPIC_AUTH_TOKEN` 均为空 → `NO_CRED=true`
+1. **`~/.claude/looper/credentials.env`**（looper 专属凭证源，`KEY=VALUE` 格式，建议 600 权限）：
+   让宿主机保持订阅 OAuth 的同时给容器独立 API key（如 OpenRouter relay），互不干扰
+2. **宿主机 `settings.json` env**：`ANTHROPIC_API_KEY`/`ANTHROPIC_AUTH_TOKEN`（历史行为）
+
+两处均无 key 时：
+
+- **run.sh 启动时探测**：`NO_CRED=true`
 - **T3**：整段跳过（省 120s 超时），标 `skip`，`output_snippet` 写明 no credentials 原因
 - **T5**：不跑 eval，标 `skip`，`rate` 为 `no_credentials`
 - **overall**：skip 不计入 fail——环境缺失≠插件回归，报告保持诚实

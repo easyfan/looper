@@ -76,8 +76,9 @@ stdout is always valid JSON matching this schema (annotated with `//` comments f
     "T2b":{ "pass": "pass | fail | skip", "detail": "B1:pass B2:pass ..." },
     "T3": { "pass": "pass | fail | skip", "output_snippet": "..." },
     "T5": { "pass": "pass | fail | skip", "rate": "6/6" }
-    // T3/T5 are "skip" when the host settings.json env has no
-    // ANTHROPIC_API_KEY/ANTHROPIC_AUTH_TOKEN (e.g. subscription OAuth host):
+    // T3/T5 are "skip" when no API key is found in either
+    // ~/.claude/looper/credentials.env (looper-specific source, checked first)
+    // or host settings.json env (e.g. subscription OAuth host has neither):
     // in-container claude cannot authenticate, so trigger/eval tests cannot run.
     // On skip, T3.output_snippet carries the reason and T5.rate is "no_credentials".
     // This is an environment gap, not a plugin regression — overall is unaffected.
@@ -170,7 +171,9 @@ On FAIL, append root-cause guidance:
 - Eval suite fail → behavior differs in clean env vs host
 - For full details on any failure, open the report file shown above.
 
-When T3/T5 show ⏭️ with a "no credentials" reason, tell the user: the host has no
-API key in settings.json env (subscription OAuth), so in-container trigger/eval
-tests were skipped — provide an `ANTHROPIC_API_KEY` in settings.json env to run them.
+When T3/T5 show ⏭️ with a "no credentials" reason, tell the user: no API key was
+found for the container (host is on subscription OAuth and no looper credential
+file exists), so in-container trigger/eval tests were skipped. To run them, create
+`~/.claude/looper/credentials.env` (chmod 600) with `ANTHROPIC_API_KEY=...` and
+optionally `ANTHROPIC_BASE_URL=...` — this keeps the host on OAuth untouched.
 Do not treat this skip as a plugin failure.
