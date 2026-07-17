@@ -74,8 +74,13 @@ stdout is always valid JSON matching this schema (annotated with `//` comments f
     "T1": { "pass": "pass | fail",        "detail": "2.1.90 (Claude Code)" },
     "T2": { "pass": "pass | fail | skip", "detail": "A1:pass A2:pass ..." },
     "T2b":{ "pass": "pass | fail | skip", "detail": "B1:pass B2:pass ..." },
-    "T3": { "pass": "pass | fail",        "output_snippet": "..." },
+    "T3": { "pass": "pass | fail | skip", "output_snippet": "..." },
     "T5": { "pass": "pass | fail | skip", "rate": "6/6" }
+    // T3/T5 are "skip" when the host settings.json env has no
+    // ANTHROPIC_API_KEY/ANTHROPIC_AUTH_TOKEN (e.g. subscription OAuth host):
+    // in-container claude cannot authenticate, so trigger/eval tests cannot run.
+    // On skip, T3.output_snippet carries the reason and T5.rate is "no_credentials".
+    // This is an environment gap, not a plugin regression — overall is unaffected.
     // Note: T4 is intentionally absent — T4 (artifact/package build step) was retired
     // and its checks were absorbed into T3 and T5. The numbering gap is preserved for
     // historical traceability.
@@ -124,7 +129,7 @@ After `run.sh` completes, present the result as:
   T1  CC availability:      ✅/❌  <version>
   T2  Plan A (A1–A7):       ✅/❌/⏭️  <detail>
   T2b Plan B (B1–B8):       ✅/❌/⏭️  <detail>
-  T3  Trigger:              ✅/❌
+  T3  Trigger:              ✅/❌/⏭️
   T5  Eval suite:           ✅/❌/⏭️  <rate>
 
 Overall: ✅ PASS / ❌ FAIL
@@ -164,3 +169,8 @@ On FAIL, append root-cause guidance:
 - Trigger 0% → description not converging, revisit eval stage
 - Eval suite fail → behavior differs in clean env vs host
 - For full details on any failure, open the report file shown above.
+
+When T3/T5 show ⏭️ with a "no credentials" reason, tell the user: the host has no
+API key in settings.json env (subscription OAuth), so in-container trigger/eval
+tests were skipped — provide an `ANTHROPIC_API_KEY` in settings.json env to run them.
+Do not treat this skip as a plugin failure.

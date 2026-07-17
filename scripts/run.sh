@@ -73,6 +73,18 @@ if [[ ! -f "$CLAUDE_JSON_SRC" ]]; then
   die ".claude.json not found: $CLAUDE_JSON_SRC — run looper/install.sh first"
 fi
 
+# ── Credential detection ──────────────────────────────────────────────────────
+# T3/T5 run claude inside the container; its only credential source is
+# host settings.json env → docker -e ANTHROPIC_API_KEY. A host on
+# subscription OAuth has no env key, so in-container claude cannot log in —
+# degrade T3/T5 to skip (environment gap, not a plugin regression).
+NO_CRED=false
+_cred=$(python3 -c "import json; e=json.load(open('$HOME/.claude/settings.json')).get('env',{}); print(e.get('ANTHROPIC_API_KEY', e.get('ANTHROPIC_AUTH_TOKEN','')))" 2>/dev/null || true)
+if [[ -z "$_cred" ]]; then
+  NO_CRED=true
+fi
+unset _cred
+
 # ── Image selection ───────────────────────────────────────────────────────────
 IMAGE=""
 IMAGE_STRATEGY=""
@@ -180,6 +192,9 @@ if [[ -n "$EVALS_JSON" && "$DISABLE_T5" != "True" ]]; then
 fi
 
 log "[looper] plugin=$NAME image=$IMAGE strategy=$IMAGE_STRATEGY evals=${EVAL_COUNT:-0}"
+if [[ "$NO_CRED" == "true" ]]; then
+  log "[looper] no API credential in host settings.json env — T3/T5 will be skipped"
+fi
 
 
 # ── Container startup ─────────────────────────────────────────────────────────
@@ -388,6 +403,17 @@ fi # end Plan B
 
 
 # ── T3: Trigger test ──────────────────────────────────────────────────────────
+T3_PASS="fail"
+T3_OUT=""
+
+if [[ "$NO_CRED" == "true" ]]; then
+
+T3_PASS="skip"
+T3_OUT="skipped: no credentials — host settings.json env has no ANTHROPIC_API_KEY/ANTHROPIC_AUTH_TOKEN, in-container claude cannot authenticate"
+log "[T3] skip (no credentials)"
+
+else
+
 # Re-install first (Plan A A6 uninstalled the plugin)
 docker exec "$CONTAINER" bash -c "CLAUDE_DIR=/root/.claude bash /plugin_src/install.sh 2>&1" > /dev/null || true
 
@@ -415,7 +441,7 @@ T3_OUT=$(docker exec "$CONTAINER" bash -c "timeout 120 claude --dangerously-skip
 T3_PASS="fail"
 if echo "$T3_OUT" | grep -qi "command not found\|no skill\|unknown command\|无法完成\|无法处理\|不知道如何\|无法识别\|抱歉\|我不能\|暂不支持\|没有该功能\|找不到\|不支持该\|无法找到"; then
   T3_PASS="fail"
-elif echo "$T3_OUT" | grep -qi "Unable to connect to API\|ENOTFOUND\|ECONNREFUSED\|connection refused\|network error\|Could not connect\|API connection"; then
+elif echo "$T3_OUT" | grep -qi "Unable to connect to API\|ENOTFOUND\|ECONNREFUSED\|connection refused\|network error\|Could not connect\|API connection\|Not logged in\|Please run /login"; then
   T3_PASS="fail"
 elif [[ -z "$(echo "$T3_OUT" | tr -d '[:space:]')" ]]; then
   T3_PASS="fail"
@@ -424,12 +450,19 @@ else
 fi
 log "[T3] $T3_PASS"
 
+fi # end T3
+
 # ── T5: Eval suite ────────────────────────────────────────────────────────────
 T5_PASS="skip"
 T5_RATE=""
 T5_OUT=""
 
-if [[ "$HAS_EVALS" == "true" ]]; then
+if [[ "$HAS_EVALS" == "true" && "$NO_CRED" == "true" ]]; then
+  T5_PASS="skip"
+  T5_RATE="no_credentials"
+  T5_OUT="skipped: no credentials — host settings.json env has no ANTHROPIC_API_KEY/ANTHROPIC_AUTH_TOKEN, in-container evals cannot run"
+  log "[T5] skip (no credentials)"
+elif [[ "$HAS_EVALS" == "true" ]]; then
   log "[T5] running $EVAL_COUNT eval cases..."
   T5_TMP="$LOOPER_TMP/t5_out_$$.txt"
   docker exec -w "$WORK_DIR" "$CONTAINER" \

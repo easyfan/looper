@@ -21,7 +21,7 @@ plugin 有两条交付路径，looper 对两者都需要验证：
 
 ### settings.json 分层构造
 容器内 settings.json 按需构造，不直接挂载宿主机配置：
-- **API 凭证**（`ANTHROPIC_AUTH_TOKEN`、`ANTHROPIC_BASE_URL` 等）：从宿主机环境变量注入，必须有
+- **API 凭证**（`ANTHROPIC_AUTH_TOKEN`、`ANTHROPIC_BASE_URL` 等）：从宿主机 `settings.json` 的 `env` 注入；若宿主机走订阅 OAuth（env 无 key），容器内 claude 无法认证，T3/T5 自动降级为 skip（见 §5.1）
 - **`extraKnownMarketplaces`**：Plan A 中为空；Plan B 中从空开始，通过测试步骤内的 `claude plugin marketplace add` 写入
 - 目的：测试的是 CC 工具链自身的配置写入能力，而不是继承宿主机已有配置
 
@@ -116,6 +116,19 @@ claude plugin marketplace add easyfan/<name>   # github shorthand
 | T5 eval suite | 保留 | 不变 |
 
 Plan A 和 Plan B 可通过 `--plan a`/`--plan b` 单独运行，默认两者都跑。
+
+### 5.1 凭证缺失降级（T3/T5）
+
+T3/T5 需要容器内 claude 实际调用 API，唯一凭证来源是宿主机 `settings.json` env →
+`docker -e ANTHROPIC_API_KEY` 注入链。宿主机走订阅 OAuth 时 env 无 key，此时：
+
+- **run.sh 启动时探测**：env 中 `ANTHROPIC_API_KEY`/`ANTHROPIC_AUTH_TOKEN` 均为空 → `NO_CRED=true`
+- **T3**：整段跳过（省 120s 超时），标 `skip`，`output_snippet` 写明 no credentials 原因
+- **T5**：不跑 eval，标 `skip`，`rate` 为 `no_credentials`
+- **overall**：skip 不计入 fail——环境缺失≠插件回归，报告保持诚实
+
+有凭证时行为不变；此外 T3 的失败关键词表包含 `Not logged in`/`Please run /login`：
+有凭证但容器内仍未认证成功时判 fail，不允许静默 pass。
 
 ---
 
