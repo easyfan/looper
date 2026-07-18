@@ -17,7 +17,13 @@
 > /plugin install looper@looper
 > ```
 
-> ⚠️ **未经自动化验证**：`/plugin` 是 Claude Code REPL 内置命令，无法通过 `claude -p` 调用，需在 Claude Code 会话中手动执行；不在 skill-test 流水线（looper Stage 5）覆盖范围内。
+> ⚠️ **部分自动化测试覆盖**：底层 `claude plugin install` CLI 路径已被 looper T2b（Plan B）验证。`/plugin` REPL 入口点（交互界面）无法通过 `claude -p` 测试，需在 Claude Code 会话中手动确认。
+
+> **如遇 `ENAMETOOLONG` 错误**，说明插件缓存因 CC runtime bug 损坏，执行以下命令修复：
+> ```bash
+> git clone https://github.com/easyfan/looper && cd looper && bash install.sh
+> ```
+> 安装脚本会自动检测并修复损坏的缓存。
 
 ### Option B — 本地脚本
 

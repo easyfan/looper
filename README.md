@@ -19,7 +19,13 @@ Used as Stage 5 of the skill-test pipeline.
 > /plugin install looper@looper
 > ```
 
-> ⚠️ **Not verified by automated tests**: `/plugin` is a Claude Code REPL built-in and cannot be invoked via `claude -p`. Run manually in a Claude Code session; not covered by skill-test pipeline (looper Stage 5).
+> ⚠️ **Partially covered by automated tests**: The underlying `claude plugin install` CLI path is verified by looper T2b (Plan B). The `/plugin` REPL entry point (interactive UI) cannot be tested via `claude -p` and must be verified manually in a Claude Code session.
+
+> **If you see `ENAMETOOLONG` errors** after installing, the plugin cache has been corrupted by a CC runtime bug. Fix with:
+> ```bash
+> git clone https://github.com/easyfan/looper && cd looper && bash install.sh
+> ```
+> The installer detects and repairs the corrupt cache automatically.
 
 ### Option B — install script
 

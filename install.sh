@@ -60,6 +60,31 @@ if ! command -v claude &>/dev/null; then
   echo ""
 fi
 
+# ── Detect and fix corrupt plugin cache (ENAMETOOLONG recursive nesting) ──────
+# CC runtime bug: clones repo into cache/looper/ then copies it into
+# cache/looper/looper/<sha>/, causing infinite path nesting on next install.
+# Fix: remove stray files at cache root, keeping only the looper/<sha>/ subdir.
+CACHE_ROOT="$HOME/.claude/plugins/cache/looper"
+PLUGIN_SUBDIR="$CACHE_ROOT/looper"
+if [ -d "$CACHE_ROOT" ] && [ -f "$CACHE_ROOT/install.sh" ]; then
+  warn "Corrupt plugin cache detected at $CACHE_ROOT (git clone leaked to cache root)"
+  if [ -d "$PLUGIN_SUBDIR" ]; then
+    info "Fixing: preserving $PLUGIN_SUBDIR, removing stray files from cache root..."
+    if ! $DRY_RUN; then
+      tmp="$(mktemp -d)"
+      mv "$PLUGIN_SUBDIR" "$tmp/looper"
+      rm -rf "$CACHE_ROOT"
+      mkdir -p "$CACHE_ROOT"
+      mv "$tmp/looper" "$PLUGIN_SUBDIR"
+      rmdir "$tmp"
+    fi
+    ok "Plugin cache repaired"
+  else
+    warn "Versioned cache subdir not found — skipping auto-repair. You may need to reinstall via /plugin install."
+  fi
+  echo ""
+fi
+
 # ── Uninstall ─────────────────────────────────────────────────────────────────
 if $UNINSTALL; then
   echo "  Uninstalling..."

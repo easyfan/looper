@@ -19,7 +19,13 @@
 > /plugin install looper@looper
 > ```
 
-> ⚠️ **Не проверено автоматическими тестами**: `/plugin` — встроенная команда REPL Claude Code, недоступная через `claude -p`. Запускать вручную в сессии Claude Code; не охвачено конвейером skill-test (looper Stage 5).
+> ⚠️ **Частично покрыто автоматизированными тестами**: Базовый CLI-путь `claude plugin install` проверяется looper T2b (Plan B). Точка входа REPL `/plugin` (интерактивный UI) не может быть протестирована через `claude -p` и требует ручной проверки в сессии Claude Code.
+
+> **При ошибке `ENAMETOOLONG`** кэш плагина повреждён из-за бага в CC runtime. Исправление:
+> ```bash
+> git clone https://github.com/easyfan/looper && cd looper && bash install.sh
+> ```
+> Установщик автоматически обнаруживает и восстанавливает повреждённый кэш.
 
 ### Option B — Скрипт установки
 

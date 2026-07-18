@@ -19,7 +19,14 @@ Docker CC propre. Utilisé comme étape 5 du pipeline skill-test.
 > /plugin install looper@looper
 > ```
 
-> ⚠️ **Non vérifié par des tests automatisés** : `/plugin` est une commande intégrée du REPL Claude Code et ne peut pas être invoquée via `claude -p`. À exécuter manuellement dans une session Claude Code ; non couvert par le pipeline skill-test (looper Stage 5).
+> ⚠️ **Partiellement couvert par des tests automatisés** : Le chemin CLI sous-jacent `claude plugin install` est vérifié par looper T2b (Plan B). Le point d'entrée REPL `/plugin` (interface interactive) ne peut pas être testé via `claude -p` et doit être vérifié manuellement dans une session Claude Code.
+
+> **En cas d'erreur `ENAMETOOLONG`**, le cache du plugin est corrompu par un bug du runtime CC. Réparer avec :
+> ```bash
+> git clone https://github.com/easyfan/looper && cd looper && bash install.sh
+> ```
+> L'installeur détecte et répare automatiquement le cache corrompu.
+
 
 ### Option B — Script d'installation
 
