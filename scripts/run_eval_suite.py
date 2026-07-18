@@ -8,11 +8,11 @@ def run_claude(prompt, timeout=240, cwd=None):
             ['claude', '--dangerously-skip-permissions', '-p', prompt],
             capture_output=True, text=True, timeout=timeout, cwd=cwd
         )
-        return (r.stdout + r.stderr).strip(), True
+        return (r.stdout + r.stderr).strip(), True, r.returncode
     except subprocess.TimeoutExpired:
-        return 'TIMEOUT', False
+        return 'TIMEOUT', False, None
     except Exception as e:
-        return str(e), False
+        return str(e), False, None
 
 def excerpt(text, limit=6000):
     if len(text) <= limit:
@@ -68,8 +68,13 @@ def grade(assertion, output, fsummary):
         f'Files created/modified during the run:\n{fsummary}\n\n'
         f'Agent reply:\n{excerpt(output)}'
     )
-    result, ok = run_claude(prompt, timeout=90)
-    return ok and 'YES' in result.upper().split()
+    # Relay backends intermittently return empty output; retry once so a
+    # judge-side blip does not register as a false assertion failure.
+    for _ in range(2):
+        result, ok, _rc = run_claude(prompt, timeout=90)
+        if ok and result.strip():
+            return 'YES' in result.upper().split()
+    return False
 
 def main():
     evals_path = sys.argv[1] if len(sys.argv) > 1 else 'evals.json'
@@ -95,13 +100,27 @@ def main():
             open(p, 'w').write(fspec['content'])
         before = snapshot(case_dir)
         print(f'  [{eid}] {prompt[:60]}', flush=True)
-        output, agent_ok = run_claude(prompt, cwd=case_dir)
+        output, agent_ok, rc = run_claude(prompt, cwd=case_dir)
         fsummary, nchanged = files_summary(case_dir, before)
+        # Relay quirk: the model may end on tool use with an empty final text,
+        # so `claude -p` prints nothing even though the agent did real work.
+        # Empty text + changed files is judgeable evidence; only empty text
+        # AND zero file changes counts as a failed call worth retrying.
+        if (not agent_ok or not output.strip()) and nchanged == 0:
+            print(f'    (empty/failed agent reply (rc={rc}) — retrying once)', flush=True)
+            output, agent_ok, rc = run_claude(prompt, cwd=case_dir)
+            fsummary, nchanged = files_summary(case_dir, before)
         # Diagnostic line: distinguishes "agent call failed" from "agent ran but
         # behaved differently" when reading reports after the fact.
         status = output if output in ('TIMEOUT',) or not agent_ok else f'{len(output)} chars'
-        print(f'    (agent reply: {status}; changed files: {nchanged})', flush=True)
-        results = [grade(a if isinstance(a, str) else a.get('text', str(a)), output, fsummary) for a in asserts]
+        print(f'    (agent reply: {status}; changed files: {nchanged}; rc={rc})', flush=True)
+        if (not agent_ok or not output.strip()) and nchanged == 0:
+            # Nothing to grade: judging would waste credits, and negative
+            # assertions would vacuously pass against empty output.
+            print('    (agent reply still empty/failed with no file changes — case marked fail without judging)', flush=True)
+            results = [False] * len(asserts)
+        else:
+            results = [grade(a if isinstance(a, str) else a.get('text', str(a)), output, fsummary) for a in asserts]
         if all(results):
             passed += 1
         for a, r in zip(asserts, results):

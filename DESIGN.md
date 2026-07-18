@@ -135,6 +135,13 @@ T3/T5 需要容器内 claude 实际调用 API。凭证按以下顺序解析后�
 有凭证时行为不变；此外 T3 的失败关键词表包含 `Not logged in`/`Please run /login`：
 有凭证但容器内仍未认证成功时判 fail，不允许静默 pass。
 
+**空输出重试护栏**：relay 后端（如 OpenRouter）下 `claude -p` 存在间歇性空输出，
+其中一部分是"模型以 tool_use 结尾、终局文本为空"的行为怪癖——agent 实际写了文件
+但 stdout 为空。因此 T5 的判定规则是：文本空**且**零文件变更才算调用失败（重试一
+次，仍失败则跳过 judge 直接全 fail，防止负向断言真空通过）；文本空但有文件变更视
+为可判定，连同文件证据交给 judge。T3 空输出重试一次；judge 空输出同样重试一次。
+诊断行记录 claude 退出码（rc=0 静默完成 / 137 OOM 被杀 / None 超时）。
+
 ---
 
 ## 6. 已知限制与 open questions

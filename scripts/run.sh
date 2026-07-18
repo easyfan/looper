@@ -452,6 +452,12 @@ fi
 
 log "[T3] trigger test starting..."
 T3_OUT=$(docker exec "$CONTAINER" bash -c "timeout 120 claude --dangerously-skip-permissions -p '$TRIGGER_PROMPT' 2>&1" || true)
+# Relay backends intermittently return empty output from claude -p; retry
+# once so a transient blip does not register as a trigger failure.
+if [[ -z "$(echo "$T3_OUT" | tr -d '[:space:]')" ]]; then
+  log "[T3] empty output — retrying once"
+  T3_OUT=$(docker exec "$CONTAINER" bash -c "timeout 120 claude --dangerously-skip-permissions -p '$TRIGGER_PROMPT' 2>&1" || true)
+fi
 
 T3_PASS="fail"
 if echo "$T3_OUT" | grep -qi "command not found\|no skill\|unknown command\|无法完成\|无法处理\|不知道如何\|无法识别\|抱歉\|我不能\|暂不支持\|没有该功能\|找不到\|不支持该\|无法找到"; then
