@@ -110,8 +110,21 @@ looper 运行两个独立验证计划。默认 `--plan both` 全部执行，也�
 |------|---------|
 | T0 | `plugin.json` manifest 合法性检查（宿主机，仅一次）|
 | T1 | 容器内 CC 可用性 |
-| T3 | skill 触发准确性（单次 `claude -p` 调用）|
-| T5 | 行为 eval suite（在容器内运行 `evals/evals.json`；`disable_t5: true` 时跳过）|
+| T3 | skill 触发准确性（单次 `claude -p` 调用）；无 API 凭证时报 `skip` |
+| T5 | 行为 eval suite（在容器内运行 `evals/evals.json`；`disable_t5: true` 或无 API 凭证时报 `skip`）|
+
+### 容器凭证（T3/T5）
+
+T3/T5 在容器内运行 `claude`，需要 API key。解析顺序：
+
+1. `~/.claude/looper/credentials.env`（推荐——宿主机订阅 OAuth 不受影响；chmod 600）：
+   ```
+   ANTHROPIC_API_KEY=sk-...
+   ANTHROPIC_BASE_URL=https://...   # 可选，用于 relay
+   ```
+2. 宿主机 `~/.claude/settings.json` 的 `env` 块
+
+两处均无 key 时，T3/T5 报 `skip`——环境缺失，不算插件失败。
 
 ## 开发
 

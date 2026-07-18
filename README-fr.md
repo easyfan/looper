@@ -115,8 +115,21 @@ Ces tests s'exécutent toujours quelle que soit la valeur de `--plan` :
 |------|-------------------|
 | T0 | Validation du manifest `plugin.json` (hôte, une seule fois) |
 | T1 | Disponibilité de CC dans le conteneur |
-| T3 | Précision du déclenchement du skill (un seul appel `claude -p`) |
-| T5 | Suite d'évaluation comportementale (exécute `evals/evals.json` dans le conteneur ; ignoré si `disable_t5: true`) |
+| T3 | Précision du déclenchement du skill (un seul appel `claude -p`) ; `skip` sans identifiants API |
+| T5 | Suite d'évaluation comportementale (exécute `evals/evals.json` dans le conteneur ; `skip` si `disable_t5: true` ou sans identifiants API) |
+
+### Identifiants du conteneur (T3/T5)
+
+T3/T5 exécutent `claude` dans le conteneur, ce qui nécessite une clé API. Ordre de résolution :
+
+1. `~/.claude/looper/credentials.env` (recommandé — un hôte sous OAuth d'abonnement reste intact ; chmod 600) :
+   ```
+   ANTHROPIC_API_KEY=sk-...
+   ANTHROPIC_BASE_URL=https://...   # optionnel, pour les relais
+   ```
+2. Le bloc `env` du fichier hôte `~/.claude/settings.json`
+
+Si aucune source ne fournit de clé, T3/T5 sont signalés `skip` — une lacune d'environnement, pas un échec du plugin.
 
 ## Développement
 

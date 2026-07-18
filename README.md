@@ -114,8 +114,21 @@ Additional tests always run regardless of `--plan`:
 |------|-----------------|
 | T0 | `plugin.json` manifest validation (host, once) |
 | T1 | CC availability inside container |
-| T3 | Skill trigger accuracy (single `claude -p` call) |
-| T5 | Behavioral eval suite (runs `evals/evals.json` inside container; skipped when `disable_t5: true`) |
+| T3 | Skill trigger accuracy (single `claude -p` call); `skip` when no API credential is available |
+| T5 | Behavioral eval suite (runs `evals/evals.json` inside container; `skip` when `disable_t5: true` or no API credential) |
+
+### Container credentials (T3/T5)
+
+T3/T5 run `claude` inside the container, which needs an API key. Resolution order:
+
+1. `~/.claude/looper/credentials.env` (recommended — keeps a subscription-OAuth host untouched; chmod 600):
+   ```
+   ANTHROPIC_API_KEY=sk-...
+   ANTHROPIC_BASE_URL=https://...   # optional, for relays
+   ```
+2. The `env` block of the host `~/.claude/settings.json`
+
+If neither provides a key, T3/T5 are reported as `skip` — an environment gap, not a plugin failure.
 
 ## Development
 

@@ -115,8 +115,21 @@ Diese Tests laufen unabhängig vom `--plan`-Parameter immer mit:
 |------|---------------------|
 | T0 | `plugin.json`-Manifest-Validierung (Host, einmalig) |
 | T1 | CC-Verfügbarkeit im Container |
-| T3 | Skill-Trigger-Genauigkeit (einzelner `claude -p`-Aufruf) |
-| T5 | Verhaltens-Eval-Suite (führt `evals/evals.json` im Container aus; übersprungen bei `disable_t5: true`) |
+| T3 | Skill-Trigger-Genauigkeit (einzelner `claude -p`-Aufruf); `skip` ohne API-Zugangsdaten |
+| T5 | Verhaltens-Eval-Suite (führt `evals/evals.json` im Container aus; `skip` bei `disable_t5: true` oder ohne API-Zugangsdaten) |
+
+### Container-Zugangsdaten (T3/T5)
+
+T3/T5 führen `claude` im Container aus und benötigen einen API-Key. Auflösungsreihenfolge:
+
+1. `~/.claude/looper/credentials.env` (empfohlen — ein Host mit Abo-OAuth bleibt unberührt; chmod 600):
+   ```
+   ANTHROPIC_API_KEY=sk-...
+   ANTHROPIC_BASE_URL=https://...   # optional, für Relays
+   ```
+2. Der `env`-Block der Host-Datei `~/.claude/settings.json`
+
+Liefert keine der beiden Quellen einen Key, werden T3/T5 als `skip` gemeldet — eine Umgebungslücke, kein Plugin-Fehler.
 
 ## Entwicklung
 
