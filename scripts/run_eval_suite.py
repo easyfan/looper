@@ -122,18 +122,26 @@ def main():
             # string off as a reply; reply-dependent assertions still fail.
             output = ('(agent process timed out before printing a reply; the '
                       'files listed above are the evidence of what it completed)')
+        labels = [a if isinstance(a, str) else a.get('text', str(a)) for a in asserts]
+        # Assertion tiers: an object assertion with "tier": "bonus" is graded
+        # and reported but does not gate the case — reply-style and wording
+        # checks vary with the relay backend, and gating on them made T5 flap
+        # across otherwise-identical runs. Plain strings stay required.
+        required = [True if isinstance(a, str) else a.get('tier', 'required') != 'bonus'
+                    for a in asserts]
         if (not agent_ok or not output.strip()) and nchanged == 0:
             # Nothing to grade: judging would waste credits, and negative
             # assertions would vacuously pass against empty output.
             print('    (agent reply still empty/failed with no file changes — case marked fail without judging)', flush=True)
             results = [False] * len(asserts)
         else:
-            results = [grade(a if isinstance(a, str) else a.get('text', str(a)), output, fsummary) for a in asserts]
-        if all(results):
+            results = [grade(label, output, fsummary) for label in labels]
+        if all(r for r, req in zip(results, required) if req):
             passed += 1
-        for a, r in zip(asserts, results):
-            label = a if isinstance(a, str) else a.get('text', str(a))
-            print(f'    {"✅" if r else "❌"} {label[:80]}', flush=True)
+        for label, r, req in zip(labels, results, required):
+            mark = '✅' if r else ('➖' if not req else '❌')
+            tier = '' if req else ' [bonus]'
+            print(f'    {mark}{tier} {label[:80]}', flush=True)
     total = len(cases)
     print(f'EVAL_SUITE_RESULT:{{"passed":{passed},"total":{total}}}', flush=True)
     sys.exit(0 if passed == total else 1)

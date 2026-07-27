@@ -156,6 +156,19 @@ T3/T5 在容器内运行 `claude`，需要 API key。解析顺序：
 
 Step 4 进度输出将显示 `eval suite: skipped (disable_t5=true in evals.json)`，整体结果不因此标记为 FAIL。
 
+### 断言分档
+
+`evals.json` 中的断言默认是纯字符串——每条字符串断言都必须通过，case 才算通过。断言也可以写成带档位的对象：
+
+```json
+"assertions": [
+  "A handoff file is written to .claude/context-handoff.md",
+  { "text": "The reply gives an explicit verdict", "tier": "bonus" }
+]
+```
+
+`"tier": "bonus"` 的断言会被判分并展示（通过 `✅ [bonus]`，未过 `➖ [bonus]`），但不影响 case 的通过判定。回复措辞、风格类检查（随 relay 后端波动）建议放 bonus；文件系统效果类检查保持必过。
+
 ## 包结构
 
 ```

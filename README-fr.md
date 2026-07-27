@@ -165,6 +165,19 @@ l'environnement propre.
 Step 4 affichera `eval suite: skipped (disable_t5=true in evals.json)`. Le résultat global
 n'est pas marqué FAIL pour cette raison.
 
+### Niveaux d'assertions
+
+Les assertions de `evals.json` sont par défaut de simples chaînes — chaque assertion chaîne doit réussir pour que le cas réussisse. Une assertion peut aussi être un objet portant un niveau :
+
+```json
+"assertions": [
+  "A handoff file is written to .claude/context-handoff.md",
+  { "text": "The reply gives an explicit verdict", "tier": "bonus" }
+]
+```
+
+Les assertions `"tier": "bonus"` sont notées et affichées (`✅ [bonus]` réussie, `➖ [bonus]` manquée) mais ne conditionnent pas le résultat du cas. Réservez bonus aux vérifications de style ou de formulation de la réponse (variables selon le backend relay) ; gardez obligatoires les vérifications d'effets sur le système de fichiers.
+
 ## Structure du paquet
 
 ```

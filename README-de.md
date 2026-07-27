@@ -165,6 +165,19 @@ ausgeführt werden können.
 Step 4 gibt `eval suite: skipped (disable_t5=true in evals.json)` aus. Das Gesamtergebnis
 wird dadurch nicht als FAIL markiert.
 
+### Assertion-Stufen
+
+Assertions in `evals.json` sind standardmäßig einfache Strings — jede String-Assertion muss bestehen, damit der Fall besteht. Eine Assertion kann stattdessen ein Objekt mit einer Stufe sein:
+
+```json
+"assertions": [
+  "A handoff file is written to .claude/context-handoff.md",
+  { "text": "The reply gives an explicit verdict", "tier": "bonus" }
+]
+```
+
+Assertions mit `"tier": "bonus"` werden bewertet und angezeigt (`✅ [bonus]` bestanden, `➖ [bonus]` verfehlt), beeinflussen das Fallergebnis aber nicht. Bonus eignet sich für Antwortstil- und Formulierungsprüfungen, die mit dem Relay-Backend schwanken; Dateisystem-Prüfungen sollten verpflichtend bleiben.
+
 ## Paketstruktur
 
 ```

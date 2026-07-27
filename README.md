@@ -164,6 +164,19 @@ run inside the clean environment.
 looper will note `eval suite: skipped (disable_t5=true in evals.json)` in the Step 4 progress
 output. The overall result is not failed.
 
+### Assertion tiers
+
+Assertions in `evals.json` are plain strings by default — every string assertion must pass for its case to pass. An assertion can instead be an object carrying a tier:
+
+```json
+"assertions": [
+  "A handoff file is written to .claude/context-handoff.md",
+  { "text": "The reply gives an explicit verdict", "tier": "bonus" }
+]
+```
+
+`"tier": "bonus"` assertions are graded and reported (`✅ [bonus]` pass, `➖ [bonus]` miss) but do not gate the case result. Use bonus for reply-style or wording checks that vary with the relay backend; keep filesystem-effect checks required.
+
 ## Package Structure
 
 ```
