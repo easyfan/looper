@@ -2,7 +2,7 @@
 """Looper T5: run evals.json inside clean CC container."""
 import json, os, subprocess, sys
 
-def run_claude(prompt, timeout=240, cwd=None):
+def run_claude(prompt, timeout=480, cwd=None):
     try:
         r = subprocess.run(
             ['claude', '--dangerously-skip-permissions', '-p', prompt],
@@ -14,7 +14,7 @@ def run_claude(prompt, timeout=240, cwd=None):
     except Exception as e:
         return str(e), False, None
 
-def excerpt(text, limit=6000):
+def excerpt(text, limit=8000):
     if len(text) <= limit:
         return text
     half = limit // 2
@@ -31,7 +31,7 @@ def snapshot(root):
                 pass
     return snap
 
-def files_summary(root, before, cap=5000):
+def files_summary(root, before, cap=14000):
     # List files created or modified since `before`, with content excerpts,
     # so the judge can verify filesystem-effect assertions.
     lines, used, count = [], 0, 0
@@ -48,7 +48,7 @@ def files_summary(root, before, cap=5000):
             rel = os.path.relpath(p, root)
             try:
                 with open(p, errors='replace') as f:
-                    content = f.read(1500)
+                    content = f.read(4000)
             except OSError:
                 content = '<unreadable>'
             entry = f'--- {rel} ---\n{content}\n'
@@ -104,9 +104,12 @@ def main():
         fsummary, nchanged = files_summary(case_dir, before)
         # Relay quirk: the model may end on tool use with an empty final text,
         # so `claude -p` prints nothing even though the agent did real work.
-        # Empty text + changed files is judgeable evidence; only empty text
-        # AND zero file changes counts as a failed call worth retrying.
-        if (not agent_ok or not output.strip()) and nchanged == 0:
+        # A timed-out or empty call is retried once even when files changed —
+        # otherwise the bare 'TIMEOUT' string is graded as the agent reply and
+        # every reply-dependent assertion fails regardless of the files. The
+        # retry runs against the same case dir, so files from the first
+        # attempt remain part of the evidence.
+        if not agent_ok or not output.strip():
             print(f'    (empty/failed agent reply (rc={rc}) — retrying once)', flush=True)
             output, agent_ok, rc = run_claude(prompt, cwd=case_dir)
             fsummary, nchanged = files_summary(case_dir, before)
@@ -114,6 +117,11 @@ def main():
         # behaved differently" when reading reports after the fact.
         status = output if output in ('TIMEOUT',) or not agent_ok else f'{len(output)} chars'
         print(f'    (agent reply: {status}; changed files: {nchanged}; rc={rc})', flush=True)
+        if output == 'TIMEOUT' and nchanged > 0:
+            # Grade the files honestly instead of passing the bare sentinel
+            # string off as a reply; reply-dependent assertions still fail.
+            output = ('(agent process timed out before printing a reply; the '
+                      'files listed above are the evidence of what it completed)')
         if (not agent_ok or not output.strip()) and nchanged == 0:
             # Nothing to grade: judging would waste credits, and negative
             # assertions would vacuously pass against empty output.
