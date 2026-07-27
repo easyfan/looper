@@ -176,7 +176,7 @@ Les assertions de `evals.json` sont par défaut de simples chaînes — chaque a
 ]
 ```
 
-Les assertions `"tier": "bonus"` sont notées et affichées (`✅ [bonus]` réussie, `➖ [bonus]` manquée) mais ne conditionnent pas le résultat du cas. Réservez bonus aux vérifications de style ou de formulation de la réponse (variables selon le backend relay) ; gardez obligatoires les vérifications d'effets sur le système de fichiers.
+Les assertions `"tier": "bonus"` sont notées et affichées (`✅ [bonus]` réussie, `➖ [bonus]` manquée) mais ne conditionnent pas le résultat du cas. Réservez bonus aux vérifications de style ou de formulation de la réponse (variables selon le backend relay) ; gardez obligatoires les vérifications d'effets sur le système de fichiers. Un cas dont les assertions obligatoires échouent est rejoué une fois dans un répertoire vierge ; le cas réussit si l'une des deux tentatives réussit.
 
 ## Structure du paquet
 

@@ -175,7 +175,7 @@ Assertions in `evals.json` are plain strings by default — every string asserti
 ]
 ```
 
-`"tier": "bonus"` assertions are graded and reported (`✅ [bonus]` pass, `➖ [bonus]` miss) but do not gate the case result. Use bonus for reply-style or wording checks that vary with the relay backend; keep filesystem-effect checks required.
+`"tier": "bonus"` assertions are graded and reported (`✅ [bonus]` pass, `➖ [bonus]` miss) but do not gate the case result. Use bonus for reply-style or wording checks that vary with the relay backend; keep filesystem-effect checks required. A case whose required assertions fail is retried once in a fresh directory; the case passes if either attempt passes.
 
 ## Package Structure
 

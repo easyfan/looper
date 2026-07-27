@@ -167,7 +167,7 @@ Step 4 进度输出将显示 `eval suite: skipped (disable_t5=true in evals.json
 ]
 ```
 
-`"tier": "bonus"` 的断言会被判分并展示（通过 `✅ [bonus]`，未过 `➖ [bonus]`），但不影响 case 的通过判定。回复措辞、风格类检查（随 relay 后端波动）建议放 bonus；文件系统效果类检查保持必过。
+`"tier": "bonus"` 的断言会被判分并展示（通过 `✅ [bonus]`，未过 `➖ [bonus]`），但不影响 case 的通过判定。回复措辞、风格类检查（随 relay 后端波动）建议放 bonus；文件系统效果类检查保持必过。必过断言未通过的 case 会在全新目录中重跑一次，任一次通过即算通过。
 
 ## 包结构
 

@@ -176,7 +176,7 @@ Assertions in `evals.json` sind standardmäßig einfache Strings — jede String
 ]
 ```
 
-Assertions mit `"tier": "bonus"` werden bewertet und angezeigt (`✅ [bonus]` bestanden, `➖ [bonus]` verfehlt), beeinflussen das Fallergebnis aber nicht. Bonus eignet sich für Antwortstil- und Formulierungsprüfungen, die mit dem Relay-Backend schwanken; Dateisystem-Prüfungen sollten verpflichtend bleiben.
+Assertions mit `"tier": "bonus"` werden bewertet und angezeigt (`✅ [bonus]` bestanden, `➖ [bonus]` verfehlt), beeinflussen das Fallergebnis aber nicht. Bonus eignet sich für Antwortstil- und Formulierungsprüfungen, die mit dem Relay-Backend schwanken; Dateisystem-Prüfungen sollten verpflichtend bleiben. Ein Fall, dessen Pflicht-Assertions scheitern, wird einmal in einem frischen Verzeichnis wiederholt; der Fall besteht, wenn einer der beiden Versuche besteht.
 
 ## Paketstruktur
 
